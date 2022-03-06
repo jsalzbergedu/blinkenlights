@@ -1,0 +1,263 @@
+#!/usr/bin/python3
+import sqlite3
+import pycparser
+import sys
+import json
+import os
+
+def new_no(con, idt, tbl):
+    return ([x[0] for x in con.execute("""select {} from {} order by {} desc limit 1""".format(idt, tbl, idt))] + [0])[0] + 1
+
+def new_labelno(con):
+    return new_no(con, "label", "node")
+
+def new_fileinfo(con):
+    return new_no(con, "id", "fileinfo")
+
+def new_childno(con):
+    return new_no(con, "id", "children")
+
+def new_bexprno(con):
+    return new_no(con, "id", "bexpr")
+
+def new_bexpr_childno(con):
+    return new_no(con, "id", "bexpr_children")
+
+def new_aexprno(con):
+    return new_no(con, "id", "aexpr")
+
+def new_aexpr_childno(con):
+    return new_no(con, "id", "aexpr_children")
+
+def new_variableno(con):
+    return new_no(con, "id", "variable")
+
+def new_constantno(con):
+    return new_no(con, "id", "constant")
+
+def parse_expr_dispatch(con, pycobj):
+    if type(pycobj) == pycparser.c_ast.ID:
+        return parse_id(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.Constant:
+        return parse_constant(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '>=':
+        return parse_ge(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '+':
+        return parse_ge(con, pycobj)
+    else:
+        raise ValueError(type(pycobj).__name__ + " not yet implemented")
+
+def parse_id(con, pycid):
+    variableno = new_variableno(con)
+    con.execute('''insert into variable values (:idt, :name)''',
+                {"idt": variableno, "name": pycid.name})
+    aexprno = new_aexprno(con)
+    con.execute('''insert into aexpr values (:kind, :id)''',
+                {"kind": "variable", "id": aexprno})
+    aexpr_childno = new_aexpr_childno(con)
+    con.execute('''insert into aexpr_children values (:id, :aexpr, :idx, :child)''',
+                {"id": aexpr_childno, "aexpr": aexprno, "idx": 0, "child": variableno})
+    return aexprno
+
+def parse_constant(con, pycconst):
+    constantno = new_constantno(con)
+    con.execute('''insert into constant values (:idt, :constant)''',
+                {"idt": constantno, "constant": pycconst.value})
+    aexprno = new_aexprno(con)
+    con.execute('''insert into aexpr values (:kind, :id)''',
+                {"kind": "constant", "id": aexprno})
+    aexpr_childno = new_aexpr_childno(con)
+    con.execute('''insert into aexpr_children values (:id, :aexpr, :idx, :child)''',
+                {"id": aexpr_childno, "aexpr": aexprno, "idx": 0, "child": constantno})
+    return aexprno
+
+def parse_ge(con, pycbinop):
+    bexprno = new_bexprno(con)
+    con.execute('''insert into bexpr values (:kind, :idt)''',
+                {"kind": "ge", "idt": bexprno})
+    left_child = parse_expr_dispatch(con, pycbinop.left)
+    childid = new_bexpr_childno(con)
+    con.execute('''insert into bexpr_children values (:idt, :bexpr, :idx, :child)''',
+                {"idt": childid, "bexpr": bexprno, "idx": 0, "child": left_child})
+    right_child = parse_expr_dispatch(con, pycbinop.right)
+    childid = new_bexpr_childno(con)
+    con.execute('''insert into bexpr_children values (:idt, :bexpr, :idx, :child)''',
+                {"idt": childid, "bexpr": bexprno, "idx": 1, "child": right_child})
+    return bexprno
+
+def parse_plus(con, pycbinop):
+    aexprno = new_aexprno(con)
+    con.execute('''insert into aexpr values (:kind, :idt)''',
+                {"kind": "+", "idt": aexprno})
+    left_child = parse_expr_dispatch(con, pycbinop.left)
+    childid = new_aexpr_childno(con)
+    con.execute('''insert into aexpr_children values (:idt, :aexpr, :idx, :child)''',
+                {"idt": childid, "aexpr": aexprno, "idx": 0, "child": left_child})
+    right_child = parse_expr_dispatch(con, pycbinop.right)
+    childid = new_aexpr_childno(con)
+    con.execute('''insert into aexpr_children values (:idt, :aexpr, :idx, :child)''',
+                {"idt": childid, "aexpr": aexprno, "idx": 1, "child": right_child})
+    return aexprno
+
+
+def parse_pycobj(pycobj, kind, con):
+    labelno = new_labelno(con)
+    con.execute('''insert into node values (:kind , :labelno)''',
+                {"kind": kind, "labelno": labelno})
+    fileid = new_fileinfo(con)
+    filename = pycobj.coord.file
+    column = pycobj.coord.column
+    line = pycobj.coord.line
+    con.execute('''insert into fileinfo values (:id, :filename, :column, :line, :node)''',
+                {"id": fileid, "filename": filename, "column": column, "line": line, "node": labelno})
+    return labelno
+
+def parse_dispatch(pycobj, con):
+    if type(pycobj) == pycparser.c_ast.Compound:
+        return parse_compound(pycobj, con)
+    elif type(pycobj) == pycparser.c_ast.Break:
+        return parse_break(pycobj, con)
+    elif type(pycobj) == pycparser.c_ast.If and not pycobj.iffalse:
+        return parse_ifthen(pycobj, con)
+    elif type(pycobj) == pycparser.c_ast.If:
+        return parse_ifthenelse(pycobj, con)
+    elif type(pycobj) == pycparser.c_ast.While:
+        return parse_while(pycobj, con)
+    else:
+        raise ValueError(type(pycobj).__name__ + " not yet handled")
+
+def parse_break(pycbreak, con):
+    return parse_pycobj(pycbreak, "break", con)
+
+def parse_compound(pyccompound, con):
+    labelno = parse_pycobj(pyccompound, "compound", con)
+    child = parse_compound_rec(labelno, pyccompound.children(), con)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 0, "child": child})
+    return labelno
+
+def parse_compound_rec(labelno, children, con):
+    # Get filename, column, line for base cases
+    filename, column, line = [x for x in con.execute('''select filename, column, line from fileinfo where node=:labelno''', {"labelno": labelno})][0]
+    if (len(children) == 0):
+        parent = labelno
+        labelno = new_labelno(con)
+        con.execute('''insert into node values (:kind , :labelno)''',
+                    {"kind": "empty", "labelno": labelno})
+        fileid = new_fileinfo(con)
+        con.execute('''insert into fileinfo values (:idt, :filename, :column, :line, :node)''',
+                    {"idt": fileid, "filename": filename, "column": column, "line": line, "node": labelno})
+        return labelno
+    elif (len(children) == 1):
+        # Insert Sl
+        labelno = new_labelno(con)
+        con.execute('''insert into node values (:kind , :labelno)''',
+                    {"kind": "sl", "labelno": labelno})
+        fileid = new_fileinfo(con)
+        con.execute('''insert into fileinfo values (:idt, :filename, :column, :line, :node)''',
+                    {"idt": fileid, "filename": filename, "column": column, "line": line, "node": labelno})
+        # Insert empty Sl
+        left = parse_compound_rec(labelno, (), con)
+        childid = new_childno(con)
+        con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                    {"idt": childid, "node": labelno, "idx": 0, "child": left})
+        # Insert right Sl
+        right_pycobj = children[0][1]
+        right = parse_dispatch(right_pycobj, con)
+        childid = new_childno(con)
+        con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                    {"idt": childid, "node": labelno, "idx": 1, "child": right})
+        return labelno
+
+def parse_assign(pycassign, con):
+    labelno = parse_pycobj(pycassign, "assign", con)
+    left = parse_expr_dispatch(con, pycassign.lvalue)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 0, "child": left})
+    right = parse_expr_dispatch(con, pycassign.rvalue)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 1, "child": right})
+    return labelno
+
+def parse_while(pycwhile, con):
+    labelno = parse_pycobj(pycwhile, "while", con)
+    child = parse_expr_dispatch(con, pycwhile.cond)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 0, "child": child})
+    child = parse_dispatch(pycwhile.iftrue, con)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 1, "child": child})
+    return labelno
+
+def parse_ifthen(pycifthen, con):
+    labelno = parse_pycobj(pycifthen, "ifthen", con)
+    child = parse_expr_dispatch(con, pycifthen.cond)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 0, "child": child})
+    child = parse_dispatch(pycifthen.iftrue, con)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 1, "child": child})
+    return labelno
+
+def parse_ifthenelse(pycifthenelse, con):
+    labelno = parse_pycobj(pycifthenelse, "ifthenelse", con)
+    child = parse_expr_dispatch(con, pycifthenelse.cond)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 0, "child": child})
+    child = parse_dispatch(pycifthenelse.iftrue, con)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 1, "child": child})
+    child = parse_dispatch(pycifthenelse.iffalse, con)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 2, "child": child})
+    return labelno
+
+def parse_program(pycprogram, con):
+    labelno = parse_pycobj(pycprogram, "pgm", con)
+    child = parse_dispatch(pycprogram, con)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": labelno, "idx": 0, "child": child})
+    return labelno
+
+def dispatch_command(command):
+    if command["command"] == 'parse':
+        con = sqlite3.connect('analysis.db')
+        con.execute('''CREATE TABLE IF NOT EXISTS node (kind text, label integer, PRIMARY KEY (label))''')
+        con.execute('''CREATE TABLE IF NOT EXISTS fileinfo (id integer, filename text, column text, line text, node integer, PRIMARY KEY (id))''')
+        con.execute('''CREATE TABLE IF NOT EXISTS children (id integer, node integer, idx integer, child integer, PRIMARY KEY (id))''')
+        con.execute('''CREATE TABLE IF NOT EXISTS bexpr (kind text, id integer, PRIMARY KEY (id))''')
+        con.execute('''CREATE TABLE IF NOT EXISTS bexpr_children (id integer, bexpr integer, idx integer, child integer, PRIMARY KEY (id))''')
+        con.execute('''CREATE TABLE IF NOT EXISTS aexpr (kind text, id integer, PRIMARY KEY (id))''')
+        con.execute('''CREATE TABLE IF NOT EXISTS aexpr_children (id integer, aexpr integer, idx integer, child integer, PRIMARY KEY (id))''')
+        con.execute('''CREATE TABLE IF NOT EXISTS variable (id integer, name text, PRIMARY KEY (id))''')
+        con.execute('''CREATE TABLE IF NOT EXISTS constant (id integer, constant integer, PRIMARY KEY (id))''')
+        con.commit()
+        parsed = pycparser.parse_file(os.path.abspath(command["filename"]), use_cpp=True)
+        program = parsed.ext[0].body
+        rval = {"node": parse_program(program, con)}
+        con.commit()
+        con.close()
+        return rval
+    else:
+        raise ValueError("Command ", command, "not handled")
+
+if __name__ == '__main__':
+    while True:
+        line = sys.stdin.read()
+        if not line:
+            break
+        command = json.loads(line)
+        print(json.dumps(dispatch_command(command)))
+
+

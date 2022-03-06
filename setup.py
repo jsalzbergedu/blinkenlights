@@ -35,6 +35,7 @@ setup(
     package_dir={'blinkenlights': 'blinkenlights'},
     include_package_data=True,
     install_requires=[
+        'pycparser>=2.21'
     ],
     license='MIT',
     zip_safe=False,
