@@ -17,17 +17,11 @@ def new_fileinfo(con):
 def new_childno(con):
     return new_no(con, "id", "children")
 
-def new_bexprno(con):
-    return new_no(con, "id", "bexpr")
+def new_exprno(con):
+    return new_no(con, "id", "expr")
 
-def new_bexpr_childno(con):
-    return new_no(con, "id", "bexpr_children")
-
-def new_aexprno(con):
-    return new_no(con, "id", "aexpr")
-
-def new_aexpr_childno(con):
-    return new_no(con, "id", "aexpr_children")
+def new_expr_childno(con):
+    return new_no(con, "id", "expr_children")
 
 def new_variableno(con):
     return new_no(con, "id", "variable")
@@ -44,6 +38,8 @@ def parse_expr_dispatch(con, pycobj):
         return parse_ge(con, pycobj)
     elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '+':
         return parse_ge(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '>':
+        return parse_gt(con, pycobj)
     else:
         raise ValueError(type(pycobj).__name__ + " not yet implemented")
 
@@ -51,59 +47,72 @@ def parse_id(con, pycid):
     variableno = new_variableno(con)
     con.execute('''insert into variable values (:idt, :name)''',
                 {"idt": variableno, "name": pycid.name})
-    aexprno = new_aexprno(con)
-    con.execute('''insert into aexpr values (:kind, :id)''',
-                {"kind": "variable", "id": aexprno})
-    aexpr_childno = new_aexpr_childno(con)
-    con.execute('''insert into aexpr_children values (:id, :aexpr, :idx, :child)''',
-                {"id": aexpr_childno, "aexpr": aexprno, "idx": 0, "child": variableno})
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :id)''',
+                {"kind": "variable", "id": exprno})
+    expr_childno = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:id, :expr, :idx, :child)''',
+                {"id": expr_childno, "expr": exprno, "idx": 0, "child": variableno})
     con.commit()
-    return aexprno
+    return exprno
 
 def parse_constant(con, pycconst):
     constantno = new_constantno(con)
     con.execute('''insert into constant values (:idt, :constant)''',
                 {"idt": constantno, "constant": pycconst.value})
-    aexprno = new_aexprno(con)
-    con.execute('''insert into aexpr values (:kind, :id)''',
-                {"kind": "constant", "id": aexprno})
-    aexpr_childno = new_aexpr_childno(con)
-    con.execute('''insert into aexpr_children values (:id, :aexpr, :idx, :child)''',
-                {"id": aexpr_childno, "aexpr": aexprno, "idx": 0, "child": constantno})
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :id)''',
+                {"kind": "constant", "id": exprno})
+    expr_childno = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:id, :expr, :idx, :child)''',
+                {"id": expr_childno, "expr": exprno, "idx": 0, "child": constantno})
     con.commit()
-    return aexprno
+    return exprno
 
 def parse_ge(con, pycbinop):
-    bexprno = new_bexprno(con)
-    con.execute('''insert into bexpr values (:kind, :idt)''',
-                {"kind": "ge", "idt": bexprno})
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :idt)''',
+                {"kind": "ge", "idt": exprno})
     left_child = parse_expr_dispatch(con, pycbinop.left)
-    childid = new_bexpr_childno(con)
-    con.execute('''insert into bexpr_children values (:idt, :bexpr, :idx, :child)''',
-                {"idt": childid, "bexpr": bexprno, "idx": 0, "child": left_child})
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 0, "child": left_child})
     right_child = parse_expr_dispatch(con, pycbinop.right)
-    childid = new_bexpr_childno(con)
-    con.execute('''insert into bexpr_children values (:idt, :bexpr, :idx, :child)''',
-                {"idt": childid, "bexpr": bexprno, "idx": 1, "child": right_child})
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 1, "child": right_child})
     con.commit()
-    return bexprno
+    return exprno
+
+def parse_gt(con, pycbinop):
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :idt)''',
+                {"kind": "gt", "idt": exprno})
+    left_child = parse_expr_dispatch(con, pycbinop.left)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 0, "child": left_child})
+    right_child = parse_expr_dispatch(con, pycbinop.right)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 1, "child": right_child})
+    con.commit()
+    return exprno
 
 def parse_plus(con, pycbinop):
-    aexprno = new_aexprno(con)
-    con.execute('''insert into aexpr values (:kind, :idt)''',
-                {"kind": "+", "idt": aexprno})
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :idt)''',
+                {"kind": "+", "idt": exprno})
     left_child = parse_expr_dispatch(con, pycbinop.left)
-    childid = new_aexpr_childno(con)
-    con.execute('''insert into aexpr_children values (:idt, :aexpr, :idx, :child)''',
-                {"idt": childid, "aexpr": aexprno, "idx": 0, "child": left_child})
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 0, "child": left_child})
     right_child = parse_expr_dispatch(con, pycbinop.right)
-    childid = new_aexpr_childno(con)
-    con.execute('''insert into aexpr_children values (:idt, :aexpr, :idx, :child)''',
-                {"idt": childid, "aexpr": aexprno, "idx": 1, "child": right_child})
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 1, "child": right_child})
     con.commit()
-    return aexprno
-
-
+    return exprno
 
 def parse_dispatch(pycobj, con):
     if type(pycobj) == pycparser.c_ast.Compound:
@@ -271,8 +280,11 @@ def parse_program(pycprogram, con):
     con.commit()
     return idno
 
-def get_child(con, idt, idx):
-    return [x for x in con.execute("select dest.id from node source inner join children on source.id=children.node AND children.idx=:idx left join node dest on children.child=dest.id where source.id=:idt", {"idt": idt, "idx": idx})][0]
+def get_node_node_child(con, idt, idx):
+    return [x for x in con.execute("select dest.id from node source inner join children on source.id=children.node AND children.idx=:idx left join node dest on children.child=dest.id where source.id=:idt", {"idt": idt, "idx": idx})][0][0]
+
+def get_node_expr_child(con, idt, idx):
+    return [x for x in con.execute("select dest.id from node source inner join children on source.id=children.node AND children.idx=:idx left join expr dest on children.child=dest.id where source.id=:idt", {"idt": idt, "idx": idx})][0][0]
 
 def get_kind(con, idt):
     return [x for x in con.execute("select kind from node where id=:idt", {"idt": idt})][0][0]
@@ -286,6 +298,8 @@ def dispatch_command(command, con):
         return rval
     elif command["command"] == 'get_kind':
         return {"kind": get_kind(con, command["idt"])}
+    elif command["command"] == 'get_child':
+        return {"kind": get_kind(con, command["idt"])}
     else:
         raise ValueError("Command ", command, "not handled")
 
@@ -294,10 +308,8 @@ def setup_con():
     con.execute('''CREATE TABLE IF NOT EXISTS node (kind text, id integer, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS fileinfo (id integer, filename text, column text, line text, node integer, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS children (id integer, node integer, idx integer, child integer, PRIMARY KEY (id))''')
-    con.execute('''CREATE TABLE IF NOT EXISTS bexpr (kind text, id integer, PRIMARY KEY (id))''')
-    con.execute('''CREATE TABLE IF NOT EXISTS bexpr_children (id integer, bexpr integer, idx integer, child integer, PRIMARY KEY (id))''')
-    con.execute('''CREATE TABLE IF NOT EXISTS aexpr (kind text, id integer, PRIMARY KEY (id))''')
-    con.execute('''CREATE TABLE IF NOT EXISTS aexpr_children (id integer, aexpr integer, idx integer, child integer, PRIMARY KEY (id))''')
+    con.execute('''CREATE TABLE IF NOT EXISTS expr (kind text, id integer, PRIMARY KEY (id))''')
+    con.execute('''CREATE TABLE IF NOT EXISTS expr_children (id integer, expr integer, idx integer, child integer, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS variable (id integer, name text, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS constant (id integer, constant integer, PRIMARY KEY (id))''')
     con.commit()
