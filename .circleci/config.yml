@@ -45,10 +45,10 @@ jobs:
           name: Run tests
           # This assumes pytest is installed via the install-package step above
           command: pytest test
-      - runcov:
+      - run:
           name: Run coverage
           command: coverage run --source=blinkenlights -m pytest test
-      - runlcov:
+      - run:
           name: Run lcov
           command: coverage-lcov
       - coveralls/upload
