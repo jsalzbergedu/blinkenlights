@@ -12,8 +12,6 @@ class TestBlinkenlights(object):
         cls.con = blinkenlights.setup_con()
         return
 
-    def test_has_structure(self, obj):
-
     def test_basic_parse(self):
         response = blinkenlights.dispatch_command({"command": "parse", "filename": "test_data/4.1.c"}, self.con)
         pgm = response["node"]
