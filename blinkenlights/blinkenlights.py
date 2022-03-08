@@ -291,7 +291,7 @@ def get_kind(con, idt):
 
 def dispatch_command(command, con):
     if command["command"] == 'parse':
-        parsed = pycparser.parse_file(os.path.abspath(command["filename"]), use_cpp=True, cpp_path='gcc')
+        parsed = pycparser.parse_file(os.path.abspath(command["filename"]), use_cpp=True, cpp_path='gcc', cpp_args=['-E'])
         program = parsed.ext[0].body
         rval = {"node": parse_program(program, con)}
         con.commit()
