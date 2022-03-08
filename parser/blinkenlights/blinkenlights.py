@@ -298,8 +298,10 @@ def dispatch_command(command, con):
         return rval
     elif command["command"] == 'get_kind':
         return {"kind": get_kind(con, command["idt"])}
-    elif command["command"] == 'get_child':
-        return {"kind": get_kind(con, command["idt"])}
+    elif command["command"] == 'get_node_node_child':
+        return {"node": get_node_node_child(con, command["idt"], command["idx"])}
+    elif command["command"] == 'get_node_expr_child':
+        return {"node": get_node_expr_child(con, command["idt"], command["idx"])}
     else:
         raise ValueError("Command ", command, "not handled")
 
