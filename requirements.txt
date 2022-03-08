@@ -1,5 +1,5 @@
 wheel>=0.22
 pycparser>=2.21
-coverage>=6.3.2
+coverage>=5.5
 toml>=0.10.2
 coverage-lcov>=0.2.1
