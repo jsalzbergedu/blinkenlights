@@ -52,7 +52,7 @@ jobs:
           name: Run lcov
           command: coverage-lcov
       - coveralls/upload:
-          path_to_lcov:/home/circleci/project/lcov.info
+          path_to_lcov: '/home/circleci/project/lcov.info'
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
