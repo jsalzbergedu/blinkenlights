@@ -18,7 +18,7 @@ class TestBlinkenlights(object):
         assert pgm >= 0
         response = blinkenlights.dispatch_command({"command": "get_kind", "idt": pgm}, self.con)
         assert response["kind"] == "pgm"
-        response = blinkenlights.dispatch_command({"command": "get_child", "idt": pgm, "idx": 0}, self.con)
+        response = blinkenlights.dispatch_command({"command": "get_node_node_child", "idt": pgm, "idx": 0}, self.con)
         return
 
     # Test pgm: select dest.id from node source inner join children on source.id=children.node left join node dest on children.child=dest.id where source.id=1;
