@@ -31,9 +31,6 @@ jobs:
     steps:
       - checkout
       - python/install-packages:
-          pkg-manager: pip
-          cache-version: "v3"
-      - python/install-packages:
           pip-dependency-file: parser/requirements.txt
           pkg-manager: pip
           cache-version: "v3"
