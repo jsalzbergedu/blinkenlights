@@ -35,11 +35,11 @@ jobs:
       - python/install-packages:
           pip-dependency-file: parser/requirements.txt
           pkg-manager: pip
+          cache-version: "v2"
       - python/install-packages:
           args: pytest
           pkg-manager: pip
           pypi-cache: false
-          cache-version: "v2"
           # app-dir: ~/project/package-directory/  # If you're requirements.txt isn't in the root directory.
           # pip-dependency-file: test-requirements.txt  # if you have a different name for your requirements file, maybe one that combines your runtime and test requirements.
       - run:
