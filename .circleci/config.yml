@@ -36,6 +36,7 @@ jobs:
           cache-version: "v3"
       - python/install-packages:
           args: pytest
+          pip-dependency-file: parser/requirements.txt
           pkg-manager: pip
           pypi-cache: false
           cache-version: "v3"
