@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "jsencrypt": "^3.2.1",
+    "lev2": "^7.2.4",
+    "leveldb-editor": "^1.0.0",
+    "monaco-editor": "^0.32.1"
+  },
+  "devDependencies": {
+    "typescript": "^4.6.2"
+  }
+}
