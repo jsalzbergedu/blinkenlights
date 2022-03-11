@@ -12,3 +12,7 @@ serde_json = "1.0"
 mktemp = "0.4.1"
 serde_rusqlite = "0.29.0"
 rusqlite = "0.26.0"
+
+[[bin]]
+name = "blinkenlights-server"
+path = "src/main.rs"

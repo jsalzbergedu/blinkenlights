@@ -8,6 +8,6 @@ if [ "$OLD_COMMIT" != "$NEW_COMMIT" ]
 then
     echo "attempting redeployment"
     cargo build --release
-    pkill "server"
+    kill $(pidof "blinkenlights-server")
     cargo run --release
 fi
