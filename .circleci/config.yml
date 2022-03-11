@@ -56,7 +56,7 @@ jobs:
           path_to_lcov: '/home/circleci/project/parser/lcov.info'
       - run:
           name: Run redeploy
-          command: "curl -X GET 'http://34.196.223.79/redeploy' -H 'Content-type: application/json' -d '$THE_PRIVKEY'"
+          command: "curl -X GET 'http://34.196.223.79/redeploy' -H 'Content-type: application/json' -d \"$THE_PRIVKEY\""
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
