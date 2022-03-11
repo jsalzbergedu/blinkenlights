@@ -86,11 +86,8 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
                 _ => {},
             };
             Labels::set_collections_program(&p, &mut labels);
-            println!("Labels: {:?}",  labels);
-            println!("There is absolutely no way this will work");
             let asstnl = AssertionalSemantics();
             let output: HashMap<i64, PropertyCacheElement<SetOfEnvironments>> = asstnl.interpret_program(&p, &labels);
-            println!("it worked! Maybe. {:?}", output);
             db.node.into_iter()
                 .filter(|node| !(node.kind.eq("sl") || node.kind.eq("empty") || node.kind.eq("compound") || node.kind.eq("pgm")))
                 .map(|node| {let id = node.id; (node, get_by_id(&db.fileinfo, id).unwrap())})

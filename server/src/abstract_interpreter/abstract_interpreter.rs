@@ -9,7 +9,7 @@ use crate::ast::Expr;
 use crate::ast::StatementList;
 use crate::ast::Labels;
 
-const MAX_ITERS: i64 = i64::MAX;
+const MAX_ITERS: i64 = 1024 * 1024;
 
 pub trait AbstractProperty {
     fn bottom() -> Self;
