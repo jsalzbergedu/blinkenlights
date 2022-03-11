@@ -49,12 +49,39 @@ function hoverHandler(model, position) {
     document.getElementById("abstractPropertyView").innerHTML = abstractValues.getValue(model, position);
 }
 
+/**
+ * Contents of the code document
+ */
+let document_contents = basic_code
+
 require(['vs/editor/editor.main'], function () {
-    monaco.languages.registerHoverProvider('c', {provideHover: hoverHandler}); // Use this eventually for showing the analysis!
-    // I'm thinking you can have a display below that shows the analysis
+    monaco.languages.registerHoverProvider('c', {provideHover: hoverHandler});
     var editor = monaco.editor.create(document.getElementById('editor'), {
         value: basic_code,
         language: 'c'
     });
+    editor.getModel().onDidChangeContent((_) => document_contents = editor.getValue())
 });
 
+let examineString = "";
+
+document.getElementById("analyzeSubmitButton").addEventListener('click', function () {
+    let rq = new XMLHttpRequest();
+    rq.onreadystatechange = function () {
+        if (rq.readyState == XMLHttpRequest.DONE) {
+            console.log("recieved rq!")
+            if (rq.status == 200) {
+                abstractValues.values = JSON.parse(rq.responseText)
+                // success
+            } else if (rq.status == 508) {
+                alert("Analysis timed out, perhaps there is an infinite loop.")
+            } else {
+                alert("Error in querying server for analysis.")
+            }
+        }
+    };
+    rq.open("POST", "/api/analyze", true);
+    rq.setRequestHeader('Content-type', 'application/json')
+    console.log("sending: ", JSON.stringify({document: document_contents}))
+    rq.send(JSON.stringify({document: document_contents}));
+});
