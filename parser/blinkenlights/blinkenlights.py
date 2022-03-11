@@ -37,7 +37,7 @@ def parse_expr_dispatch(con, pycobj):
     elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '>=':
         return parse_ge(con, pycobj)
     elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '+':
-        return parse_ge(con, pycobj)
+        return parse_plus(con, pycobj)
     elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '>':
         return parse_gt(con, pycobj)
     else:
@@ -138,8 +138,8 @@ def parse_pycobj(pycobj, kind, con):
                 {"kind": kind, "idno": idno})
     fileid = new_fileinfo(con)
     filename = pycobj.coord.file
-    column = pycobj.coord.column
-    line = pycobj.coord.line
+    column = int(pycobj.coord.column)
+    line = int(pycobj.coord.line)
     con.execute('''insert into fileinfo values (:id, :filename, :column, :line, :node)''',
                 {"id": fileid, "filename": filename, "column": column, "line": line, "node": idno})
     con.commit()
@@ -308,7 +308,7 @@ def dispatch_command(command, con):
 def setup_con():
     con = sqlite3.connect('analysis.db')
     con.execute('''CREATE TABLE IF NOT EXISTS node (kind text, id integer, PRIMARY KEY (id))''')
-    con.execute('''CREATE TABLE IF NOT EXISTS fileinfo (id integer, filename text, column text, line text, node integer, PRIMARY KEY (id))''')
+    con.execute('''CREATE TABLE IF NOT EXISTS fileinfo (id integer, filename text, column integer, line integer, node integer, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS children (id integer, node integer, idx integer, child integer, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS expr (kind text, id integer, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS expr_children (id integer, expr integer, idx integer, child integer, PRIMARY KEY (id))''')

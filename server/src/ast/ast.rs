@@ -124,6 +124,25 @@ impl Expr {
             Expr::Nand(i, _, _) => *i,
         }
     }
+
+    // For now, variables are not associated with their environments.
+    // Once they are, replace (i64, String) with  i64
+    // Moreover this is just the default, concrete, evaluator
+    pub fn eval<E: Fn((i64, &str)) -> i64>(&self, environment: &E) -> i64 {
+        match self {
+            Expr::Variable(id, s) => environment((*id, s)),
+            Expr::Constant(_, value) => *value,
+            Expr::Addition(_, left, right) => left.eval(environment) + right.eval(environment),
+            Expr::Subtraction(_, left, right) => left.eval(environment) - right.eval(environment),
+            Expr::Equal(_, left, right) => if left.eval(environment) == right.eval(environment) {1} else {0},
+            Expr::NotEqual(_, left, right) => if left.eval(environment) == right.eval(environment) {0} else {1},
+            Expr::LessThan(_, left, right) => if left.eval(environment) < right.eval(environment) {1} else {0},
+            Expr::GreaterThan(_, left, right) => if left.eval(environment) > right.eval(environment) {1} else {0},
+            Expr::LessThanEqual(_, left, right) => if left.eval(environment) <= right.eval(environment) {1} else {0},
+            Expr::GreaterThanEqual(_, left, right) => if left.eval(environment) >= right.eval(environment) {1} else {0},
+            Expr::Nand(_, left, right) => if left.eval(environment) != 0 && right.eval(environment) != 0 {0} else {1},
+        }
+    }
 }
 
 impl Into<i64> for Expr {

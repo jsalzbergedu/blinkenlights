@@ -8,6 +8,7 @@ use std::process::{ Command, Stdio };
 
 use server::db::*;
 use server::ast::*;
+use server::abstract_interpreter::*;
 
 #[get("/api")]
 async fn hello() -> impl Responder {
@@ -74,10 +75,7 @@ fn write_tmp_file(s: &str) -> std::io::Result<i64> {
 #[post("/api/analyze")]
 async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
     let mut map = HashMap::new();
-    let mut dummy_property = Vec::new();
     let analyze_request : AnalyzeRequest = serde_json::from_str(&body)?;
-    dummy_property.push((0, "dummyword".to_string(), "dummyprop".to_string()));
-    map.insert(9, dummy_property);
     let pgm_idt = write_tmp_file(&analyze_request.document)?;
     let db = DB::from_path("analysis.db")?;
     match Program::from_db(&db, pgm_idt) {
@@ -89,6 +87,21 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
             };
             Labels::set_collections_program(&p, &mut labels);
             println!("Labels: {:?}",  labels);
+            println!("There is absolutely no way this will work");
+            let asstnl = AssertionalSemantics();
+            let output: HashMap<i64, PropertyCacheElement<SetOfEnvironments>> = asstnl.interpret_program(&p, &labels);
+            println!("it worked! Maybe. {:?}", output);
+            db.node.into_iter()
+                .filter(|node| !(node.kind.eq("sl") || node.kind.eq("empty") || node.kind.eq("compound") || node.kind.eq("pgm")))
+                .map(|node| {let id = node.id; (node, get_by_id(&db.fileinfo, id).unwrap())})
+                .map(|(node, finfo)| (node, finfo.column.clone(), finfo.line.clone()))
+                .filter(|(node, _, _)| output.contains_key(&node.id))
+                .map(|(node, column, line)| {let id = node.id; (node, column, line, format!("{:?}", output[&id]))})
+                .for_each(|(node, column, line, property_string)| {
+                    let mut property = Vec::new();
+                    property.push((column, node.kind, property_string));
+                    map.insert(line, property);
+                })
         },
         Err(str) => {println!("{}", str); return Err(std::io::Error::new(std::io::ErrorKind::Other, str));},
     };

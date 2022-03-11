@@ -36,7 +36,7 @@ pub fn get_by_id<'a, T: Identifiable>(collection: &'a Vec<T>, id: i64) -> Result
     get(collection, |elt| elt.id() == id)
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Node {
     pub kind: String,
     pub id: i64,
@@ -54,12 +54,12 @@ impl Identifiable for Node {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FileInfo {
     pub id: i64,
     pub filename: String,
-    pub column: String,
-    pub line: String,
+    pub column: i64,
+    pub line: i64,
     pub node: i64,
 }
 
@@ -75,7 +75,7 @@ impl Identifiable for FileInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Children {
     pub id: i64,
     pub node: i64,
@@ -95,7 +95,7 @@ impl Identifiable for Children {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Expr {
     pub kind: String,
     pub id: i64,
@@ -113,7 +113,7 @@ impl FromDB for Expr {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExprChildren {
     pub id: i64,
     pub expr: i64,
@@ -133,7 +133,7 @@ impl Identifiable for ExprChildren {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Variable {
     pub id: i64,
     pub name: String,
@@ -151,7 +151,7 @@ impl Identifiable for Variable {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Constant {
     pub id: i64,
     pub constant: i64,
