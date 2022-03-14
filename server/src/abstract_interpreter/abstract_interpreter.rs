@@ -1,21 +1,20 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
+use std::ops::Add;
+use std::ops::Sub;
 
 use crate::ast::Statement;
 use crate::ast::Program;
 use crate::ast::Expr;
 use crate::ast::StatementList;
 use crate::ast::Labels;
+use crate::lattice::AbstractProperty;
+use crate::lattice::Lattice;
 
 const MAX_ITERS: i64 = 1024 * 1024;
-
-pub trait AbstractProperty {
-    fn bottom() -> Self;
-    fn leq(&self, y: &Self) -> bool;
-    fn lub(&self, y: Self) -> Self;
-}
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PropertyCacheElement<T> where T: AbstractProperty + Sized + Clone + Eq + Debug {
@@ -49,15 +48,15 @@ pub trait AbstractDomain<T> where T: AbstractProperty + Sized + Clone + Eq + Deb
             Statement::IfThen(id, expr, st) => {
                 let mut test = self.interpret(labels, st, self.test(expr, element.clone()));
                 let not_test = self.not_test(expr, element.clone());
-                test.insert(*id, PropertyCacheElement { at_property: element, after_property: test[&st.id()].after_property.clone().lub(not_test.clone()), break_to_property: test[&st.id()].break_to_property.clone() } );
+                test.insert(*id, PropertyCacheElement { at_property: element, after_property: test[&st.id()].after_property.clone().lub(&not_test.clone()), break_to_property: test[&st.id()].break_to_property.clone() } );
                 test
             },
             Statement::IfThenElse(id, expr, st, sf) => {
                 let mut test = self.interpret(labels, st, self.test(expr, element.clone()));
                 let not_test = self.interpret(labels, sf, self.not_test(expr, element.clone()));
                 test.insert(*id, PropertyCacheElement { at_property: element.clone(),
-                                                        after_property: test[&st.id()].after_property.clone().lub(not_test[&st.id()].after_property.clone()),
-                                                        break_to_property: test[&st.id()].break_to_property.clone().lub(not_test[&st.id()].break_to_property.clone()) } );
+                                                        after_property: test[&st.id()].after_property.clone().lub(&not_test[&st.id()].after_property.clone()),
+                                                        break_to_property: test[&st.id()].break_to_property.clone().lub(&not_test[&st.id()].break_to_property.clone()) } );
                 test
             },
             Statement::While(id, expr, st) => {
@@ -66,12 +65,12 @@ pub trait AbstractDomain<T> where T: AbstractProperty + Sized + Clone + Eq + Deb
                 let mut map = HashMap::new();
                 while iter < MAX_ITERS - 1 {
                     let old_iterate = iterate.clone();
-                    let at_interpretation = self.interpret(labels, st, self.test(expr, iterate.at_property.clone().lub(element.clone())));
+                    let at_interpretation = self.interpret(labels, st, self.test(expr, iterate.at_property.clone().lub(&element.clone())));
                     map.extend(at_interpretation.clone());
                     let at_property = at_interpretation[&st.id()].after_property.clone();
                     iterate = PropertyCacheElement {
                         at_property: at_property.clone(),
-                        after_property: self.not_test(expr, at_property.clone()).lub(self.interpret(labels, st, self.test(expr, at_property.clone()))[&st.id()].break_to_property.clone()),
+                        after_property: self.not_test(expr, at_property.clone()).lub(&self.interpret(labels, st, self.test(expr, at_property.clone()))[&st.id()].break_to_property.clone()),
                         break_to_property: T::bottom(),
                     };
                     if iterate == old_iterate {
@@ -109,7 +108,7 @@ pub trait AbstractDomain<T> where T: AbstractProperty + Sized + Clone + Eq + Deb
             StatementList::StatementList(id, sl, s) => {
                 let mut map_sl = self.interpret_sl(labels, sl, element.clone());
                 let map_s = self.interpret(labels, s, map_sl[&sl.id()].after_property.clone());
-                map_sl.insert(*id, PropertyCacheElement { at_property: element, after_property: map_s[&s.id()].after_property.clone(), break_to_property: map_sl[&sl.id()].break_to_property.lub(map_s[&s.id()].break_to_property.clone()) });
+                map_sl.insert(*id, PropertyCacheElement { at_property: element, after_property: map_s[&s.id()].after_property.clone(), break_to_property: map_sl[&sl.id()].break_to_property.lub(&map_s[&s.id()].break_to_property.clone()) });
                 map_sl.extend(map_s);
                 map_sl
             },
@@ -132,17 +131,12 @@ impl AbstractProperty for SetOfEnvironments {
         SetOfEnvironments(set)
     }
 
-    fn leq(&self, y: &Self) -> bool {
-        let SetOfEnvironments(x) = self;
-        let SetOfEnvironments(y) = y;
-        x.iter().all(|element| y.contains(element))
+    fn lub(&self, y: &Self) -> Self {
+        match (self, y) {
+            (SetOfEnvironments(x), SetOfEnvironments(y)) => SetOfEnvironments(x.union(&y).cloned().collect())
+        }
     }
 
-    fn lub(&self, y: Self) -> Self {
-        let SetOfEnvironments(x) = self;
-        let SetOfEnvironments(y) = y.clone();
-        SetOfEnvironments(x.union(&y).cloned().collect())
-    }
 }
 
 pub struct AssertionalSemantics();
@@ -151,15 +145,18 @@ impl AbstractDomain<SetOfEnvironments> for AssertionalSemantics {
     fn assign(&self, x: &Expr, expr: &Expr, environments: SetOfEnvironments) -> SetOfEnvironments {
         match x {
             Expr::Variable(_, s) => {
-                let SetOfEnvironments(e) = environments;
-                let mut output = HashSet::new();
-                for environment in e {
-                    let mut output_environment = environment.clone();
-                    output_environment.insert(s.to_string(), expr.eval(&(|(_, s)| *environment.get(s).unwrap_or(&0))));
+                match environments {
+                    SetOfEnvironments(e) => {
+                        let mut output = HashSet::new();
+                        for environment in e {
+                            let mut output_environment = environment.clone();
+                            output_environment.insert(s.to_string(), expr.eval(&(|(_, s)| *environment.get(s).unwrap_or(&0.into()))));
 
-                    output.insert(output_environment);
+                            output.insert(output_environment);
+                        }
+                        SetOfEnvironments(output)
+                    }
                 }
-                SetOfEnvironments(output)
             },
             _ => panic!("Non variable lvalues not yet handled"),
         }
@@ -168,7 +165,7 @@ impl AbstractDomain<SetOfEnvironments> for AssertionalSemantics {
         let SetOfEnvironments(e) = environments;
         let mut output = HashSet::new();
         for environment in e {
-            if expr.eval(&(|(_, s)| *environment.get(s).unwrap_or(&0))) > 0 {
+            if expr.eval(&(|(_, s)| *environment.get(s).unwrap_or(&0.into()))) != 0.into() {
                 output.insert(environment);
             }
         }
@@ -179,10 +176,195 @@ impl AbstractDomain<SetOfEnvironments> for AssertionalSemantics {
         let SetOfEnvironments(e) = environments;
         let mut output = HashSet::new();
         for environment in e {
-            if expr.eval(&(|(_, s)| *environment.get(s).unwrap_or(&0))) == 0 {
+            if expr.eval(&(|(_, s)| *environment.get(s).unwrap_or(&0.into()))) == 0.into() {
                 output.insert(environment);
             }
         }
         SetOfEnvironments(output)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+pub enum SignPropertyElement {
+    Bottom = 0,                  // bot
+    StrictlyLessThanZero = 1,    // <00
+    Zero = 2,                    // =00
+    StrictlyGreaterThanZero = 3, // >00
+    GreaterThanZero = 4,         // >=0
+    NotZero = 5,                 // !=0
+    LessThanZero = 6,            // <=0
+    Top = 7,                     // top
+}
+
+impl From<i64> for SignPropertyElement {
+    fn from(i: i64) -> Self {
+        if i == 0 {
+            SignPropertyElement::Zero
+        } else if i > 0 {
+            SignPropertyElement::StrictlyGreaterThanZero
+        } else {
+            SignPropertyElement::StrictlyLessThanZero
+        }
+    }
+}
+
+const MINUS_TABLE: [[SignPropertyElement; 8]; 8] = {
+    let bot = SignPropertyElement::Bottom;
+    let sl0 = SignPropertyElement::StrictlyLessThanZero;
+    let zro = SignPropertyElement::Zero;
+    let sg0 = SignPropertyElement::StrictlyGreaterThanZero;
+    let lt0 = SignPropertyElement::LessThanZero;
+    let nzr = SignPropertyElement::NotZero;
+    let gt0 = SignPropertyElement::GreaterThanZero;
+    let top = SignPropertyElement::Top;
+    [   //         bot  <00  =00  >00  <=0  !=0  >=0  top
+        /* bot */ [bot, bot, bot, bot, bot, bot, bot, bot],
+        /* <00 */ [bot, top, sl0, sl0, top, top, sl0, top],
+        /* =00 */ [bot, sg0, zro, sl0, gt0, nzr, lt0, top],
+        /* >00 */ [bot, sg0, gt0, top, gt0, top, top, top],
+        /* <=0 */ [bot, top, lt0, sl0, top, top, lt0, top],
+        /* !=0 */ [bot, top, nzr, top, top, top, top, top],
+        /* >=0 */ [bot, sg0, gt0, top, gt0, top, top, top],
+        /* top */ [bot, top, top, top, top, top, top, top],
+    ]
+};
+
+const ORD_TABLE: [[Option<Ordering>; 8]; 8] = {
+    let les = Some(Ordering::Less);
+    let eql = Some(Ordering::Equal);
+    let gtr = Some(Ordering::Greater);
+    let non = None;
+    [   //         bot  <00  =00  >00  <=0  !=0  >=0  top
+        /* bot */ [eql, les, les, les, les, les, les, les],
+        /* <00 */ [gtr, eql, non, non, les, les, non, les],
+        /* =00 */ [gtr, non, eql, non, les, non, les, les],
+        /* >00 */ [gtr, non, non, eql, non, les, les, les],
+        /* <=0 */ [gtr, gtr, gtr, non, eql, non, non, les],
+        /* !=0 */ [gtr, gtr, non, gtr, non, eql, non, les],
+        /* >=0 */ [gtr, non, gtr, gtr, non, non, eql, les],
+        /* top */ [gtr, gtr, gtr, gtr, gtr, gtr, gtr, eql],
+    ]
+};
+
+impl PartialOrd for SignPropertyElement {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        ORD_TABLE[*self as usize][*other as usize]
+    }
+}
+
+impl Sub for SignPropertyElement {
+    type Output = SignPropertyElement;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        MINUS_TABLE[self as usize][rhs as usize]
+    }
+}
+
+impl Add for SignPropertyElement {
+    type Output = SignPropertyElement;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self - (SignPropertyElement::Zero - rhs)
+    }
+}
+
+const LUB_TABLE: [[SignPropertyElement; 8]; 8] = {
+    let bot = SignPropertyElement::Bottom;
+    let sl0 = SignPropertyElement::StrictlyLessThanZero;
+    let zro = SignPropertyElement::Zero;
+    let sg0 = SignPropertyElement::StrictlyGreaterThanZero;
+    let lt0 = SignPropertyElement::LessThanZero;
+    let nzr = SignPropertyElement::NotZero;
+    let gt0 = SignPropertyElement::GreaterThanZero;
+    let top = SignPropertyElement::Top;
+    [   //         bot  <00  =00  >00  <=0  !=0  >=0  top
+        /* bot */ [bot, sl0, zro, sg0, lt0, nzr, gt0, top],
+        /* <00 */ [sl0, sl0, lt0, nzr, lt0, lt0, top, top],
+        /* =00 */ [zro, lt0, zro, gt0, lt0, top, gt0, top],
+        /* >00 */ [sg0, nzr, gt0, sg0, top, sg0, gt0, top],
+        /* <=0 */ [lt0, lt0, lt0, top, lt0, top, top, top],
+        /* !=0 */ [nzr, nzr, top, nzr, top, nzr, top, top],
+        /* >=0 */ [gt0, top, gt0, gt0, top, top, gt0, top],
+        /* top */ [top, top, top, top, top, top, top, top],
+    ]
+};
+
+impl AbstractProperty for SignPropertyElement {
+    fn bottom() -> Self {
+        SignPropertyElement::Bottom
+    }
+
+    fn lub(&self, y: &Self) -> Self {
+        LUB_TABLE[*self as usize][*y as usize]
+    }
+}
+
+impl Lattice for SignPropertyElement {
+    fn top() -> Self {
+        SignPropertyElement::Top
+    }
+}
+
+impl From<bool> for SignPropertyElement {
+    fn from(b: bool) -> Self {
+        match b {
+            true => Self::Top,
+            false => Self::Zero,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SignProperty(BTreeMap<String, SignPropertyElement>);
+
+pub struct SignSemantics();
+
+impl AbstractProperty for SignProperty {
+    fn bottom() -> Self {
+        SignProperty(BTreeMap::new())
+    }
+
+    fn lub(&self, y: &Self) -> Self {
+        let SignProperty(x) = self;
+        let SignProperty(y) = y.clone();
+        let mut out = BTreeMap::new();
+        for (key, value) in x.into_iter() {
+            out.insert(key.to_string(), value.lub(y.get(key).unwrap_or(&SignPropertyElement::Bottom)));
+        }
+        for (key, value) in y.into_iter() {
+            out.insert(key.to_string(), value.lub(x.get(&key).unwrap_or(&SignPropertyElement::Bottom)));
+        }
+        SignProperty(out)
+    }
+}
+
+impl AbstractDomain<SignProperty> for SignSemantics {
+    fn assign(&self, x: &Expr, expr: &Expr, environments: SignProperty) -> SignProperty {
+        match x {
+            Expr::Variable(_, s) => {
+                let SignProperty(old_e) = environments;
+                let mut e = old_e.clone();
+                e.insert(s.to_string(), expr.eval(&(|(_, s)| *e.get(s).unwrap_or(&SignPropertyElement::Zero))));
+                SignProperty(e)
+            },
+            _ => panic!("Non variable lvalues not yet handled"),
+        }
+    }
+    fn test(&self, expr: &Expr, environments: SignProperty) -> SignProperty {
+        let SignProperty(e) = environments;
+        if expr.eval(&(|(_, s)| *e.get(s).unwrap_or(&SignPropertyElement::Zero))) != SignPropertyElement::Zero {
+            SignProperty(e)
+        } else {
+            SignProperty::bottom()
+        }
+    }
+
+    fn not_test(&self, expr: &Expr, environments: SignProperty) -> SignProperty {
+        let SignProperty(e) = environments;
+        if expr.eval(&(|(_, s)| *e.get(s).unwrap_or(&SignPropertyElement::Zero))) >= SignPropertyElement::Zero {
+            SignProperty(e)
+        } else {
+            SignProperty::bottom()
+        }
     }
 }
