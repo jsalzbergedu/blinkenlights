@@ -2,11 +2,11 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, http::header::HttpDate, HttpRequest};
 
 use serde::{Serialize, Deserialize};
-use std::{collections::HashMap, io::{BufWriter, Write, ErrorKind, BufReader, BufRead}};
+use std::{collections::HashMap, io::{BufWriter, Write, ErrorKind, BufReader, BufRead}, fmt::Debug, borrow::Borrow};
 use mktemp::Temp;
 use std::process::{ Command, Stdio };
 
-use server::db::*;
+use server::{db::*, lattice::AbstractProperty};
 use server::ast::*;
 use server::abstract_interpreter::*;
 
@@ -28,6 +28,7 @@ struct NodeResponse {
 #[derive(Serialize, Deserialize)]
 struct AnalyzeRequest {
     document: String,
+    analysis: String,
 }
 
 fn write_tmp_file(s: &str) -> std::io::Result<i64> {
@@ -72,6 +73,20 @@ fn write_tmp_file(s: &str) -> std::io::Result<i64> {
     }
 }
 
+fn print_property_cache<T: AbstractProperty + Sized + Clone + Eq + Debug>(output: HashMap<i64, PropertyCacheElement<T>>, db: DB, map: &mut HashMap<i64, Vec<(i64, String, String)>>) {
+    db.node.into_iter()
+        .filter(|node| !(node.kind.eq("sl") || node.kind.eq("empty") || node.kind.eq("compound") || node.kind.eq("pgm")))
+        .map(|node| {let id = node.id; (node, get_by_id(&db.fileinfo, id).unwrap())})
+        .map(|(node, finfo)| (node, finfo.column.clone(), finfo.line.clone()))
+        .filter(|(node, _, _)| output.contains_key(&node.id))
+        .map(|(node, column, line)| {let id = node.id; (node, column, line, format!("{:?}", output[&id]))})
+        .for_each(|(node, column, line, property_string)| {
+            let mut property = Vec::new();
+            property.push((column, node.kind, property_string));
+            map.insert(line, property);
+        })
+}
+
 #[post("/api/analyze")]
 async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
     let mut map = HashMap::new();
@@ -86,19 +101,19 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
                 _ => {},
             };
             Labels::set_collections_program(&p, &mut labels);
-            let asstnl = AssertionalSemantics();
-            let output: HashMap<i64, PropertyCacheElement<SetOfEnvironments>> = asstnl.interpret_program(&p, &labels);
-            db.node.into_iter()
-                .filter(|node| !(node.kind.eq("sl") || node.kind.eq("empty") || node.kind.eq("compound") || node.kind.eq("pgm")))
-                .map(|node| {let id = node.id; (node, get_by_id(&db.fileinfo, id).unwrap())})
-                .map(|(node, finfo)| (node, finfo.column.clone(), finfo.line.clone()))
-                .filter(|(node, _, _)| output.contains_key(&node.id))
-                .map(|(node, column, line)| {let id = node.id; (node, column, line, format!("{:?}", output[&id]))})
-                .for_each(|(node, column, line, property_string)| {
-                    let mut property = Vec::new();
-                    property.push((column, node.kind, property_string));
-                    map.insert(line, property);
-                })
+            match analyze_request.analysis.borrow() {
+                "sign" => {
+                    let sign = SignSemantics();
+                    let output: HashMap<i64, PropertyCacheElement<SignProperty>> = sign.interpret_program(&p, &labels);
+                    print_property_cache(output, db, &mut map);
+                },
+                "trace" => {
+                    let asstnl = AssertionalSemantics();
+                    let output: HashMap<i64, PropertyCacheElement<SetOfEnvironments>> = asstnl.interpret_program(&p, &labels);
+                    print_property_cache(output, db, &mut map);
+                },
+                _ => {}
+            }
         },
         Err(str) => {println!("{}", str); return Err(std::io::Error::new(std::io::ErrorKind::Other, str));},
     };

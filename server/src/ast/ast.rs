@@ -1,7 +1,7 @@
-use std::{borrow::Borrow, collections::{HashMap, HashSet}};
+use std::{borrow::Borrow, collections::{HashMap, HashSet}, ops::{Add, Sub}};
 use std::convert::Into;
 
-use crate::db;
+use crate::{db, lattice::Lattice};
 
 type AstId = i64;
 
@@ -127,20 +127,19 @@ impl Expr {
 
     // For now, variables are not associated with their environments.
     // Once they are, replace (i64, String) with  i64
-    // Moreover this is just the default, concrete, evaluator
-    pub fn eval<E: Fn((i64, &str)) -> i64>(&self, environment: &E) -> i64 {
+    pub fn eval<T: PartialOrd + Eq + Add<Output = T> + Sub<Output = T> + From<i64> + From<bool>, E: Fn((i64, &str)) -> T>(&self, environment: &E) -> T {
         match self {
             Expr::Variable(id, s) => environment((*id, s)),
-            Expr::Constant(_, value) => *value,
+            Expr::Constant(_, value) => T::from(*value),
             Expr::Addition(_, left, right) => left.eval(environment) + right.eval(environment),
             Expr::Subtraction(_, left, right) => left.eval(environment) - right.eval(environment),
-            Expr::Equal(_, left, right) => if left.eval(environment) == right.eval(environment) {1} else {0},
-            Expr::NotEqual(_, left, right) => if left.eval(environment) == right.eval(environment) {0} else {1},
-            Expr::LessThan(_, left, right) => if left.eval(environment) < right.eval(environment) {1} else {0},
-            Expr::GreaterThan(_, left, right) => if left.eval(environment) > right.eval(environment) {1} else {0},
-            Expr::LessThanEqual(_, left, right) => if left.eval(environment) <= right.eval(environment) {1} else {0},
-            Expr::GreaterThanEqual(_, left, right) => if left.eval(environment) >= right.eval(environment) {1} else {0},
-            Expr::Nand(_, left, right) => if left.eval(environment) != 0 && right.eval(environment) != 0 {0} else {1},
+            Expr::Equal(_, left, right) => if left.eval(environment) == right.eval(environment) {T::from(true)} else {T::from(false)},
+            Expr::NotEqual(_, left, right) => if left.eval(environment) != right.eval(environment) {T::from(true)} else {T::from(false)},
+            Expr::LessThan(_, left, right) => T::from((right.eval(environment) - left.eval(environment)) > T::from(0)),
+            Expr::GreaterThan(_, left, right) => T::from((left.eval(environment) - right.eval(environment)) > T::from(0)),
+            Expr::LessThanEqual(_, left, right) => T::from((right.eval(environment) - left.eval(environment)) >= T::from(0)),
+            Expr::GreaterThanEqual(_, left, right) => T::from((left.eval(environment) - right.eval(environment)) >= T::from(0)),
+            Expr::Nand(_, left, right) => if left.eval(environment) <= T::from(false) || right.eval(environment) <= T::from(false) {T::from(true)} else {T::from(true)},
         }
     }
 }

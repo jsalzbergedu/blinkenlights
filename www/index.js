@@ -82,6 +82,5 @@ document.getElementById("analyzeSubmitButton").addEventListener('click', functio
     };
     rq.open("POST", "/api/analyze", true);
     rq.setRequestHeader('Content-type', 'application/json')
-    console.log("sending: ", JSON.stringify({document: document_contents}))
-    rq.send(JSON.stringify({document: document_contents}));
+    rq.send(JSON.stringify({document: document_contents, analysis: document.getElementById("analysisSelector").value}));
 });
