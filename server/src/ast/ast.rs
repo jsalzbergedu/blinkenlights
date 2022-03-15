@@ -139,7 +139,13 @@ impl Expr {
             Expr::GreaterThan(_, left, right) => T::from((left.eval(environment) - right.eval(environment)) > T::from(0)),
             Expr::LessThanEqual(_, left, right) => T::from((right.eval(environment) - left.eval(environment)) >= T::from(0)),
             Expr::GreaterThanEqual(_, left, right) => T::from((left.eval(environment) - right.eval(environment)) >= T::from(0)),
-            Expr::Nand(_, left, right) => if left.eval(environment) <= T::from(false) || right.eval(environment) <= T::from(false) {T::from(true)} else {T::from(true)},
+            // Is one of them definitley zero? If so, true
+            Expr::Nand(_, left, _) if left.eval(environment) <= T::from(false) => T::from(true),
+            Expr::Nand(_, _, right) if right.eval(environment) <= T::from(false) => T::from(true),
+            // Are both of them definitley not zero? If so, false
+            Expr::Nand(_, left, right) if !(T::from(false) <= right.eval(environment)) && !(T::from(false) <= left.eval(environment)) => T::from(false),
+            // Otherwise, one is potentially zero, so overapproximate with true
+            Expr::Nand(_, _, _) => T::from(true),
         }
     }
 }
