@@ -2,7 +2,7 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, http::header::HttpDate, HttpRequest};
 
 use serde::{Serialize, Deserialize};
-use std::{collections::HashMap, io::{BufWriter, Write, ErrorKind, BufReader, BufRead}, fmt::Debug, borrow::Borrow};
+use std::{collections::HashMap, io::{BufWriter, Write, ErrorKind, BufReader, BufRead}, fmt::Debug, borrow::Borrow, sync::Mutex};
 use mktemp::Temp;
 use std::process::{ Command, Stdio };
 
@@ -45,6 +45,8 @@ fn write_tmp_file(s: &str) -> std::io::Result<i64> {
             },
         };
     }
+
+    println!("starting python");
     let cmd = Command::new("timeout")
         .arg("10s")
         .arg("python3")
@@ -91,20 +93,29 @@ fn print_property_cache<T: AbstractProperty + Sized + Clone + Eq + Debug>(output
 async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
     let mut map = HashMap::new();
     let analyze_request : AnalyzeRequest = serde_json::from_str(&body)?;
+    println!("Im not even getting to program analysis!");
     let pgm_idt = write_tmp_file(&analyze_request.document)?;
+    println!("wrote temp file");
     let db = DB::from_path("analysis.db")?;
+    println!("its in the db bb");
     match Program::from_db(&db, pgm_idt) {
         Ok(p) => {
             let mut labels = Labels::from_program(&p);
+            println!("labels failing?");
             match Labels::set_labelling_tree_program(&p, &mut labels) {
                 Err(err) => return Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
                 _ => {},
             };
+            println!("set labelling tree failing?");
             Labels::set_collections_program(&p, &mut labels);
+            println!("About to request analysis!");
             match analyze_request.analysis.borrow() {
                 "sign" => {
-                    let sign = SignSemantics();
-                    let output: HashMap<i64, PropertyCacheElement<SignProperty>> = sign.interpret_program(&p, &labels);
+                    // let sign = SignSemantics();
+                    // let output: HashMap<i64, PropertyCacheElement<SignProperty>> = sign.interpret_program(&p, &labels);
+                    // print_property_cache(output, db, &mut map);
+                    let predicate = PredicateSemantics();
+                    let output: HashMap<i64, PropertyCacheElement<PredicateExpression>> = predicate.interpret_program(&p, &labels);
                     print_property_cache(output, db, &mut map);
                 },
                 "trace" => {
@@ -123,6 +134,15 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
 #[actix_web::main]
 async fn main() -> Result<(), std::io::Error> {
     println!("hello?");
+    let config = z3::Config::new();
+    let context = z3::Context::new(&config);
+    // unsafe {
+    //     GLOBAL_CONTEXT = Some(Mutex::new(GlobalContext(context)));
+    //     GLOBAL_INT_INDICES = Some(Mutex::new(HashMap::new()));
+    //     GLOBAL_BOOL_INDICES = Some(Mutex::new(HashMap::new()));
+    //     GLOBAL_INTS = Some(Mutex::new(Vec::new()));
+    //     GLOBAL_BOOLS = Some(Mutex::new(Vec::new()));
+    // }
     HttpServer::new(|| {
         App::new().service(hello).service(echo).service(analyze)
     }).bind(("127.0.0.1", 8000))?.run().await

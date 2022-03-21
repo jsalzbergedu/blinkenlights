@@ -314,7 +314,7 @@ impl Labels {
                 l.break_to = -1;
                 l.escape = false;
             },
-            Statement::IfThen(id, _, stmt) | Statement::While(id, _, stmt) => {
+            Statement::IfThen(id, _, stmt) => {
                 let escape;
                 {
                     Labels::set_labelling_tree(stmt, after, break_to, labels);
@@ -327,6 +327,13 @@ impl Labels {
                 if escape {
                     l.break_to = break_to;
                 }
+            },
+            Statement::While(id, _, stmt) => {
+                {
+                    Labels::set_labelling_tree(stmt, after, after, labels);
+                }
+                let mut l = labels.labels.get_mut(id).unwrap();
+                l.after = after;
             },
             Statement::IfThenElse(id, _, stmt_true, stmt_false) => {
                 let mut escape;
@@ -395,8 +402,8 @@ impl Labels {
                     escape = l_stmt.escape;
                 }
                 match escape {
-                    true => Ok(()),
-                    false => Err("No escape allowed outside of while loop".to_string()),
+                    false => Ok(()),
+                    true => Err("No escape allowed outside of while loop".to_string()),
                 }
             },
         }
