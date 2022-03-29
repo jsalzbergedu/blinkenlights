@@ -2,7 +2,8 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, http::header::HttpDate, HttpRequest};
 
 use serde::{Serialize, Deserialize};
-use std::{collections::HashMap, io::{BufWriter, Write, ErrorKind, BufReader, BufRead}, fmt::Debug, borrow::Borrow, sync::Mutex};
+use z3::{Config, Context, Solver};
+use std::{collections::HashMap, io::{BufWriter, Write, ErrorKind, BufReader, BufRead}, fmt::Debug, borrow::Borrow, sync::Mutex, os::unix::prelude::MetadataExt};
 use mktemp::Temp;
 use std::process::{ Command, Stdio };
 
@@ -63,14 +64,14 @@ fn write_tmp_file(s: &str) -> std::io::Result<i64> {
                                                 .map_err(|_| std::io::Error::new(ErrorKind::Other, "bad path string"))?).as_bytes()).map(|_| ()),
         None => Err(std::io::Error::new(ErrorKind::Other, "No stdin")),
     }?;
-     match cmd.stdout {
-         Some(stdout) => {
-             let mut buf = String::new();
-             let mut reader = BufReader::new(stdout);
-             reader.read_line(&mut buf)?;
-             let node_response : NodeResponse  = serde_json::from_str(&buf)?;
-             Ok(node_response.node)
-         }
+    match cmd.stdout {
+        Some(stdout) => {
+            let mut buf = String::new();
+            let mut reader = BufReader::new(stdout);
+            reader.read_line(&mut buf)?;
+            let node_response : NodeResponse  = serde_json::from_str(&buf)?;
+            Ok(node_response.node)
+        }
         None => Err(std::io::Error::new(ErrorKind::Other, "No stdout")),
     }
 }
@@ -114,12 +115,52 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
                     // let sign = SignSemantics();
                     // let output: HashMap<i64, PropertyCacheElement<SignProperty>> = sign.interpret_program(&p, &labels);
                     // print_property_cache(output, db, &mut map);
-                    let predicate = PredicateSemantics();
-                    let output: HashMap<i64, PropertyCacheElement<PredicateExpression>> = predicate.interpret_program(&p, &labels);
-                    print_property_cache(output, db, &mut map);
+                    let mut predicate = match PredicateSemantics::from_db(&db, &labels) {
+                        Ok(it) => it,
+                        Err(err) => return Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
+                    };
+                    let output: HashMap<i64, PropertyCacheElement<PredicateEnvironment>> = predicate.interpret_program(&p, &labels);
+                    let config = Config::new();
+                    let context = Context::new(&config);
+                    let solver = Solver::new(&context);
+                    db.node.into_iter()
+                        .filter(|node| !(node.kind.eq("empty") || node.kind.eq("sl")))
+                        .map(|node| {let id = node.id; (node, get_by_id(&db.fileinfo, id).unwrap())})
+                        .map(|(node, finfo)| (node, finfo.column.clone(), finfo.line.clone()))
+                        .filter(|(node, _, _)| output.contains_key(&node.id))
+                        .map(|(node, column, line)| {let id = node.id;
+                                                     let mut result = "No Model -- Unsatisfied";
+                                                     let result_string;
+                                                     if output.contains_key(&id) {
+                                                         let inv = &output[&id].at_property.invariant;
+                                                         match inv.into_sat(&context) {
+                                                             Z3Repr::Int(_) => panic!("Invariants may not be int"),
+                                                             Z3Repr::Bool(b) => {
+                                                                 solver.assert(&b);
+                                                                 match solver.check() {
+                                                                     z3::SatResult::Unsat => {println!("UNSAT!: {:?}", solver)},
+                                                                     z3::SatResult::Unknown => {result = "No Model -- Unknown"},
+                                                                     z3::SatResult::Sat => {
+                                                                         let mut map = HashMap::new();
+                                                                         let _ = &output[&id].at_property.model(&mut map);
+                                                                         result_string = format!("Satisfied -- {:?}", map);
+                                                                         result = &result_string;
+                                                                     },
+                                                                 };
+                                                             },
+                                                         }
+                                                     }
+                                                     println!("{}", result);
+                                                     solver.reset();
+                                                     (node, column, line, format!("{}", result))})
+                        .for_each(|(node, column, line, property_string)| {
+                            let mut property = Vec::new();
+                            property.push((column, node.kind, property_string));
+                            map.insert(line, property);
+                        })
                 },
                 "trace" => {
-                    let asstnl = AssertionalSemantics();
+                    let mut asstnl = AssertionalSemantics();
                     let output: HashMap<i64, PropertyCacheElement<SetOfEnvironments>> = asstnl.interpret_program(&p, &labels);
                     print_property_cache(output, db, &mut map);
                 },

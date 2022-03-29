@@ -1,0 +1,360 @@
+
+// impl AbstractProperty for PredicateEnvironment {
+//     fn bottom() -> Self {
+//         let mut named_variables = BTreeMap::new();
+//         named_variables.insert("__TT__".to_owned(), Predicate::IntegerName("__TT__".to_owned()));
+//         named_variables.insert("__FF__".to_owned(), Predicate::IntegerName("__FF__".to_owned()));
+//         named_variables.insert("__TT__bool__".to_owned(), Predicate::IntegerName("__TT__bool__".to_owned()));
+//         named_variables.insert("__FF__bool__".to_owned(), Predicate::IntegerName("__FF__bool__".to_owned()));
+//         PredicateEnvironment(PredicateExpression { invariant: Predicate::IntegerName("__TT__bool__".to_owned()), representative: "__TT__bool__".to_owned(), named_variables })
+//     }
+
+//     fn lub(&self, y: &Self) -> Self {
+//         match (self, y) {
+//             (PredicateEnvironment(l), PredicateEnvironment(r)) => {
+//                 let representative = l.gensym("__GENSYM__bool_lub", |s| l.named_variables.contains_key(s) || r.named_variables.contains_key(s));
+//                 let lhs = Predicate::Implies(Box::new(Predicate::IntegerName(representative.clone())), Box::new(l.invariant.clone()));
+//                 let rhs = Predicate::Implies(Box::new(Predicate::IntegerName(representative.clone())), Box::new(r.invariant.clone()));
+//                 let invariant = Predicate::And(Box::new(Predicate::And(Box::new(lhs), Box::new(rhs))), Box::new(Predicate::And(Box::new(l.invariant.clone()), Box::new(r.invariant.clone()))));
+//                 let mut named_variables = BTreeMap::new();
+//                 named_variables.extend(l.named_variables.clone());
+//                 named_variables.extend(r.named_variables.clone());
+//                 named_variables.insert(representative.clone(), Predicate::IntegerName(representative.clone()));
+//                 PredicateEnvironment(PredicateExpression { invariant, representative, named_variables })
+//             }
+//         }
+//     }
+// }
+
+// impl PartialEq for PredicateEnvironment {
+//     fn eq(&self, other: &Self) -> bool {
+//         let (PredicateEnvironment(lhs), PredicateEnvironment(rhs)) = (self, other);
+//         let (rhs, _) = rhs.uniquely_rename(|s| lhs.named_variables.contains_key(s));
+//         // let invariant = Predicate::And(Box::new(lhs.invariant.clone()), Box::new(rhs.invariant.clone()));
+//         let mut cfg = Config::new();
+//         cfg.set_timeout_msec(1000);
+//         let context = Context::new(&cfg);
+//         let lhs_invariant = lhs.invariant.into_sat(&context);
+//         match lhs_invariant {
+//             Z3Repr::Int(_) => panic!("Invariants must be Boolean Expressions"),
+//             Z3Repr::Bool(il) => {
+//                 let rhs_invariant = rhs.invariant.into_sat(&context);
+//                 match rhs_invariant {
+//                     Z3Repr::Int(_) => panic!("Invariants must be Boolean Expressions"),
+//                     Z3Repr::Bool(ir) => {
+//                         let to_check = Predicate::Not(Box::new(Predicate::Equal(Box::new(lhs.named_variables.get(&lhs.representative).unwrap_or(&Predicate::IntegerLiteral(0)).clone()),
+//                                                                                 Box::new(rhs.named_variables.get(&rhs.representative).unwrap_or(&Predicate::IntegerLiteral(0)).clone()))));
+//                         let to_check = to_check.into_sat(&context);
+//                         match to_check {
+//                             Z3Repr::Int(_) => panic!("Invariants must be Boolean Expressions"),
+//                             Z3Repr::Bool(tc) => {
+//                                 let solver = Solver::new(&context);
+//                                 solver.assert(&ir);
+//                                 solver.assert(&il);
+//                                 solver.assert(&tc);
+//                                 println!("Solver state: {:?}", solver);
+//                                 match solver.check() {
+//                                     z3::SatResult::Unsat => true,
+//                                     z3::SatResult::Unknown => panic!("Sat solver timeout"),
+//                                     z3::SatResult::Sat => false,
+//                                 }
+//                             }
+//                         }
+//                     },
+//                 }
+//             },
+//         }
+//     }
+// }
+
+
+
+// impl From<Predicate> for PredicateEnvironment {
+//     fn from(p: Predicate) -> Self {
+//         let mut named_variables = BTreeMap::new();
+//         p.names(&mut named_variables);
+//         let mut expr = PredicateExpression {
+//             invariant: p,
+//             representative: "".to_owned(),
+//             named_variables,
+//         };
+//         let representative = expr.gensym("__USER_PREDICATE__", |s| expr.named_variables.contains_key(s));
+//         let invariant = Predicate::And(Box::new(expr.invariant.clone()), Box::new(Predicate::Equal(Box::new(Predicate::IntegerName(representative.clone())), Box::new(expr.invariant.clone()))));
+//         let expr = PredicateExpression {
+//             invariant: invariant.clone(),
+//             representative: representative.to_owned(),
+//             named_variables: {expr.named_variables.insert(representative, invariant); expr.named_variables},
+//         };
+//         PredicateEnvironment(expr)
+//     }
+// }
+
+
+// impl Eq for PredicateEnvironment {}
+
+// impl AbstractDomain<PredicateEnvironment> for PredicateSemantics {
+//     fn assign(&mut self, x: &Expr, expr: &Expr, environment: PredicateEnvironment) -> PredicateEnvironment {
+//         match x {
+//             Expr::Variable(_, s) => {
+//                 let expression = PredicateExpression {
+//                     environment: environment,
+//                     representative: 
+//                 };
+//                 let (environments, map) = environment.rename_all(s);
+//                 let mut expr = expr.eval(&|(_, s)| PredicateExpression { invariant:
+//                                                                          if environments.named_variables.contains_key(s) {
+//                                                                              environments.invariant.clone()
+//                                                                          } else {
+//                                                                              Predicate::And(Box::new(environments.invariant.clone()), Box::new(Predicate::Equal(Box::new(Predicate::IntegerName(map[s].to_owned())), Box::new(Predicate::IntegerLiteral(0)))))
+//                                                                          },
+//                                                                          representative: map.get(s).unwrap_or(&s.to_owned()).to_owned(),
+//                                                                          named_variables: environments.named_variables.clone() });
+//                 expr.named_variables.extend(environments.named_variables);
+//                 let predicate = Predicate::Equal(Box::new(Predicate::IntegerName(s.clone())), Box::new(Predicate::IntegerName(expr.representative.clone())));
+//                 let predicate = Predicate::And(Box::new(predicate), Box::new(expr.invariant.clone()));
+//                 let invariant = Predicate::And(Box::new(environments.invariant.clone()), Box::new(predicate));
+//                 expr.named_variables.insert(s.clone(), Predicate::IntegerName(s.clone()));
+//                 let representative = expr.gensym("__GENSYM__bool_assign", |s| expr.named_variables.contains_key(s));
+//                 expr.named_variables.insert(representative.clone(), Predicate::IntegerName(representative.clone()));
+//                 PredicateEnvironment(PredicateExpression { invariant, representative, named_variables: expr.named_variables })
+//             },
+//             _ => panic!("Non variable lvalues not yet handled"),
+//         }
+//     }
+
+//     fn test(&mut self, expr: &Expr, PredicateEnvironment(element): PredicateEnvironment) -> PredicateEnvironment {
+//         let mut expr = expr.eval(&|(_, s)| PredicateExpression { invariant:
+//                                                                  if element.named_variables.contains_key(s) {
+//                                                                      element.invariant.clone()
+//                                                                  } else {
+//                                                                      Predicate::And(Box::new(element.invariant.clone()), Box::new(Predicate::Equal(Box::new(Predicate::IntegerName(s.to_owned())), Box::new(Predicate::IntegerLiteral(0)))))
+//                                                                  },
+//                                                                  representative: s.to_owned(),
+//                                                                  named_variables: element.named_variables.clone() });
+//         expr.named_variables.extend(element.named_variables);
+//         let envs = Predicate::And(Box::new(expr.invariant.clone()), Box::new(element.invariant.clone()));
+//         let invariant = Predicate::And(Box::new(Predicate::NotEqual(Box::new(expr.named_variables[&expr.representative].to_owned()), Box::new(Predicate::IntegerName("__FF__".to_string())))), Box::new(envs));
+//         let representative = expr.gensym("__GENSYM__bool_assign", |s| expr.named_variables.contains_key(s));
+//         expr.named_variables.insert(representative.clone(), Predicate::IntegerName(representative.clone()));
+//         PredicateEnvironment(PredicateExpression { invariant, representative, named_variables: expr.named_variables })
+//     }
+
+//     fn not_test(&mut self, expr: &Expr, PredicateEnvironment(element): PredicateEnvironment) -> PredicateEnvironment {
+//         let mut expr = expr.eval(&|(_, s)| PredicateExpression { invariant:
+//                                                                  if element.named_variables.contains_key(s) {
+//                                                                      element.invariant.clone()
+//                                                                  } else {
+//                                                                      Predicate::And(Box::new(element.invariant.clone()), Box::new(Predicate::Equal(Box::new(Predicate::IntegerName(s.to_owned())), Box::new(Predicate::IntegerLiteral(0)))))
+//                                                                  },
+//                                                                  representative: s.to_owned(),
+//                                                                  named_variables: element.named_variables.clone() });
+//         expr.named_variables.extend(element.named_variables);
+//         let envs = Predicate::And(Box::new(expr.invariant.clone()), Box::new(element.invariant.clone()));
+//         let invariant = Predicate::And(Box::new(Predicate::Equal(Box::new(expr.named_variables[&expr.representative].to_owned()), Box::new(Predicate::IntegerName("__FF__".to_string())))), Box::new(envs));
+//         let representative = expr.gensym("__GENSYM__bool_assign", |s| expr.named_variables.contains_key(s));
+//         expr.named_variables.insert(representative.clone(), Predicate::IntegerName(representative.clone()));
+//         PredicateEnvironment(PredicateExpression { invariant, representative, named_variables: expr.named_variables })
+//     }
+
+//     fn interpret(&mut self, labels: &Labels, statement: &Statement, element: PredicateEnvironment) -> HashMap<i64, PropertyCacheElement<PredicateEnvironment>> {
+//         let mut cfg = Config::new();
+//         cfg.set_timeout_msec(1000);
+//         let ctx = Context::new(&cfg);
+//         let solver = Solver::new(&ctx);
+
+//         // Check at property
+//         let at_property = self.invariant(statement.id()).clone();
+//         match element.0.invariant.into_sat(&ctx) {
+//             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//             Z3Repr::Bool(p) => {
+//                 match at_property.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(q) => {
+//                         self.check_implication(statement.id(), &solver, &p, &q);
+//                     },
+//                 }
+//             },
+//         }
+
+//         // insert abstract element
+//         let after = labels.labels[&statement.id()].after;
+//         let break_to = labels.labels[&statement.id()].break_to;
+//         let after_property = self.invariant(after).clone();
+//         let break_to_property = self.invariant(break_to).clone();
+//         let mut map = HashMap::<i64, PropertyCacheElement<PredicateEnvironment>>::new();
+
+//         let not_test_invariant: Predicate; // Not test invariant declared here to extend the lifetime
+//         match statement {
+//             Statement::Assign(id, x, y) => {
+//                 match self.assign(x, y, at_property.into()).0.invariant.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(p) => {
+//                         match after_property.into_sat(&ctx) {
+//                             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                             Z3Repr::Bool(q) => {
+//                                 self.check_implication(*id, &solver, &p, &q);
+//                             },
+//                         }
+//                     },
+//                 }
+//             },
+//             Statement::Skip(id) | Statement::Decl(id) => {
+//                 match at_property.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(p) => {
+//                         match after_property.into_sat(&ctx) {
+//                             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                             Z3Repr::Bool(q) => {
+//                                 self.check_implication(*id, &solver, &p, &q);
+//                             },
+//                         }
+//                     },
+//                 }
+//                 map.insert(*id, PropertyCacheElement { at_property: element.clone(), after_property: element.clone(), break_to_property: PredicateEnvironment::bottom()});
+//             },
+//             Statement::IfThen(id, expr, st) | Statement::While(id, expr, st) => {
+//                 println!("Checking if or while: {:?}", statement);
+//                 let test_env = self.test(expr, at_property.clone().into());
+//                 let test = self.interpret(labels, st, test_env);
+//                 map.extend(test.clone());
+//                 println!("Checking true case:");
+//                 match test[&st.id()].after_property.0.invariant.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(p) => {
+//                         match after_property.into_sat(&ctx) {
+//                             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                             Z3Repr::Bool(q) => {
+//                                 self.check_implication(*id, &solver, &p, &q);
+//                             },
+//                         }
+//                     },
+//                 }
+//                 println!("Checking false case:");
+//                 let not_test = self.not_test(expr, at_property.into());
+//                 not_test_invariant = not_test.0.invariant;
+//                 match not_test_invariant.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(p) => {
+//                         match after_property.into_sat(&ctx) {
+//                             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                             Z3Repr::Bool(q) => {
+//                                 self.check_implication(*id, &solver, &p, &q);
+//                             },
+//                         }
+//                     },
+//                 }
+//             },
+//             Statement::IfThenElse(id, expr, st, sf) => {
+//                 let test_env = self.test(expr, at_property.clone().into());
+//                 let test = self.interpret(labels, st, test_env);
+//                 map.extend(test.clone());
+//                 match test[&st.id()].after_property.0.invariant.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(p) => {
+//                         match after_property.into_sat(&ctx) {
+//                             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                             Z3Repr::Bool(q) => {
+//                                 self.check_implication(*id, &solver, &p, &q);
+//                             },
+//                         }
+//                     },
+//                 }
+//                 let not_test_env = self.not_test(expr, at_property.into());
+//                 let not_test = self.interpret(labels, sf, not_test_env);
+//                 map.extend(not_test.clone());
+//                 not_test_invariant = not_test[&sf.id()].after_property.0.invariant.clone();
+//                 match not_test_invariant.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(p) => {
+//                         match after_property.into_sat(&ctx) {
+//                             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                             Z3Repr::Bool(q) => {
+//                                 self.check_implication(*id, &solver, &p, &q);
+//                             },
+//                         }
+//                     },
+//                 }
+//             },
+//             Statement::Break(id) => {
+//                 match at_property.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(p) => {
+//                         match break_to_property.into_sat(&ctx) {
+//                             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                             Z3Repr::Bool(q) => {
+//                                 self.check_implication(*id, &solver, &p, &q);
+//                             },
+//                         }
+//                     },
+//                 }
+//             },
+//             Statement::Compound(_, sl) => {
+//                 map.extend(self.interpret_sl(labels, sl, element.clone()));
+//             },
+//         }
+//         map
+//     }
+
+
+//     fn interpret_sl(&mut self, labels: &Labels, sl: &StatementList, element: PredicateEnvironment) -> HashMap<i64, PropertyCacheElement<PredicateEnvironment>> {
+//         let mut cfg = Config::new();
+//         cfg.set_timeout_msec(1000);
+//         let ctx = Context::new(&cfg);
+//         let solver = Solver::new(&ctx);
+
+//         // Check at property
+//         let at_property = self.invariant(sl.id()).clone();
+//         match element.0.invariant.into_sat(&ctx) {
+//             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//             Z3Repr::Bool(p) => {
+//                 match at_property.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(q) => {
+//                         self.check_implication(sl.id(), &solver, &p, &q);
+//                     },
+//                 }
+//             },
+//         }
+
+//         // insert abstract element
+//         let after = labels.labels[&sl.id()].after;
+//         let break_to = labels.labels[&sl.id()].break_to;
+//         let after_property = self.invariant(after).clone();
+
+//         let break_to_property = self.invariant(break_to).clone();
+//         let mut map = HashMap::<i64, PropertyCacheElement<PredicateEnvironment>>::new();
+//         {
+//             let at_property = PredicateEnvironment(PredicateExpression { invariant: at_property.clone(), representative: "__TT__bool__".to_owned(), named_variables: BTreeMap::new() });
+//             let after_property = PredicateEnvironment(PredicateExpression { invariant: after_property.clone(), representative: "__TT__bool__".to_owned(), named_variables: BTreeMap::new() });
+//             let break_to_property = PredicateEnvironment(PredicateExpression { invariant: break_to_property.clone(), representative: "__TT__bool__".to_owned(), named_variables: BTreeMap::new() });
+//             let at_property = at_property.into();
+//             let after_property = after_property.into();
+//             let break_to_property = break_to_property.into();
+//             map.insert(sl.id(), PropertyCacheElement { at_property , after_property, break_to_property });
+//         }
+
+//         match sl {
+//             StatementList::Empty(_) => {
+//             },
+//             StatementList::StatementList(id, sl, s) => {
+//                 let map_sl = self.interpret_sl(labels, sl, element.clone());
+//                 map.extend(map_sl.clone());
+//                 let map_s = self.interpret(labels, s, self.invariant(s.id()).clone().into());
+//                 map.extend(map_s.clone());
+//                 // Equivalent to checking on the at (because after sl = at s)
+//                 match map_s[&s.id()].after_property.0.invariant.into_sat(&ctx) {
+//                     Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                     Z3Repr::Bool(p) => {
+//                         match after_property.into_sat(&ctx) {
+//                             Z3Repr::Int(_) => panic!("Assertion must be a boolean expression"),
+//                             Z3Repr::Bool(q) => {
+//                                 self.check_implication(*id, &solver, &p, &q);
+//                             },
+//                         }
+//                     },
+//                 };
+//             },
+//         }
+//         map
+//     }
+// }

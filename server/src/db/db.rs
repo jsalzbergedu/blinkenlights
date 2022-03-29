@@ -169,6 +169,25 @@ impl Identifiable for Constant {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Assertion {
+    pub id: i64,
+    pub node: i64,
+    pub expr: i64,
+}
+
+impl FromDB for Assertion {
+    fn table_name<'a>() -> &'a str {
+        return "assertion";
+    }
+}
+
+impl Identifiable for Assertion {
+    fn id(&self) -> i64 {
+        self.id
+    }
+}
+
 pub struct DB {
     pub node: Vec<Node>,
     pub fileinfo: Vec<FileInfo>,
@@ -176,7 +195,8 @@ pub struct DB {
     pub expr: Vec<Expr>,
     pub expr_children: Vec<ExprChildren>,
     pub variable: Vec<Variable>,
-    pub constant: Vec<Constant>
+    pub constant: Vec<Constant>,
+    pub assertion: Vec<Assertion>
 }
 
 impl DB {
@@ -188,7 +208,8 @@ impl DB {
             expr: Expr::from_db(con),
             expr_children: ExprChildren::from_db(con),
             variable: Variable::from_db(con),
-            constant: Constant::from_db(con)
+            constant: Constant::from_db(con),
+            assertion: Assertion::from_db(con),
         }
     }
 

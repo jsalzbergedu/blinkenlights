@@ -17,7 +17,7 @@ pub enum Statement {
     Decl(AstId),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Expr {
     Variable(AstId, String),
     Constant(AstId, i64),
@@ -65,6 +65,16 @@ impl StatementList {
             StatementList::StatementList(i, _, _) => *i,
         }
     }
+
+    pub fn names<'a>(&self, names: &'a mut Vec<String>) {
+        match self {
+            StatementList::Empty(_) => {},
+            StatementList::StatementList(_, sl, s) => {
+                sl.names(names);
+                s.names(names);
+           },
+        }
+    }
 }
 
 impl Into<i64> for StatementList {
@@ -76,6 +86,9 @@ impl Into<i64> for StatementList {
 impl Expr {
     pub fn from_db(db: &db::DB, exprno: i64) -> Result<Self, String> {
         let expr = db::get_by_id(&db.expr, exprno)?;
+        let not = |id, x: Expr| Expr::Nand(id, Box::new(x.clone()), Box::new(x));
+        let and = |id, x, y| not(id, Expr::Nand(id, x, y));
+        let or = |id, x: Expr, y: Expr| not(id, and(id, Box::new(not(id, x)), Box::new(not(id, y))));
         match expr.kind.borrow() {
             "constant" => {
                 let constant_id = db::get(&db.expr_children, |x| x.expr == exprno)?.child;
@@ -87,7 +100,7 @@ impl Expr {
                 let variable = db::get_by_id(&db.variable, variable_id)?;
                 Ok(Expr::Variable(variable.id, variable.name.clone()))
             },
-            "+" | "-" | "lt" | "gt" | "le" | "ge" | "eq" | "neq" | "nand" => {
+            "+" | "-" | "lt" | "gt" | "le" | "ge" | "eq" | "neq" | "nand" | "&&" | "||" => {
                 let left_id = db::get(&db.expr_children, |x| (x.expr == exprno) && (x.idx == 0) )?.child;
                 let right_id = db::get(&db.expr_children, |x| (x.expr == exprno) && (x.idx == 1) )?.child;
                 let left_expr = Box::new(Expr::from_db(&db, left_id)?);
@@ -102,6 +115,8 @@ impl Expr {
                     "eq" => Ok(Expr::Equal(exprno, left_expr, right_expr)),
                     "neq" => Ok(Expr::NotEqual(exprno, left_expr, right_expr)),
                     "nand" => Ok(Expr::Nand(exprno, left_expr, right_expr)),
+                    "&&" => {println!("&& {:?} {:?}", left_expr, right_expr); Ok(and(exprno, left_expr, right_expr))},
+                    "||" => Ok(or(exprno, *left_expr, *right_expr)),
                     _ => panic!("impossible"),
                 }
             },
@@ -148,6 +163,22 @@ impl Expr {
             Expr::Nand(_, _, _) => T::from(true),
         }
     }
+
+    pub fn names<'a>(&'a self, buf: &'a mut Vec<String>) {
+        match self {
+            Expr::Variable(_, n) => buf.push(n.to_owned()),
+            Expr::Constant(_, _) => {},
+            Expr::Addition(_, l, r) => {l.names(buf); r.names(buf);},
+            Expr::Subtraction(_, l, r) => {l.names(buf); r.names(buf);},
+            Expr::Equal(_, l, r) => {l.names(buf); r.names(buf);},
+            Expr::NotEqual(_, l, r) => {l.names(buf); r.names(buf);},
+            Expr::LessThan(_, l, r) => {l.names(buf); r.names(buf);},
+            Expr::GreaterThan(_, l, r) => {l.names(buf); r.names(buf);},
+            Expr::LessThanEqual(_, l, r) => {l.names(buf); r.names(buf);},
+            Expr::GreaterThanEqual(_, l, r) => {l.names(buf); r.names(buf);},
+            Expr::Nand(_, l, r) => {l.names(buf); r.names(buf);},
+        }
+    }
 }
 
 impl Into<i64> for Expr {
@@ -191,6 +222,28 @@ impl Statement {
             Statement::Break(i) => *i,
             Statement::Compound(i, _) => *i,
             Statement::Decl(i) => *i,
+        }
+    }
+
+    pub fn names<'a>(&self, names: &'a mut Vec<String>) {
+        match self {
+            Statement::Assign(_, e1, e2) => {
+                e1.names(names);
+                e2.names(names);
+            },
+            Statement::IfThen(_, e, st) | Statement::While(_, e, st) => {
+                e.names(names);
+                st.names(names);
+            },
+            Statement::IfThenElse(_, e, st, sf) => {
+                e.names(names);
+                st.names(names);
+                sf.names(names);
+            },
+            Statement::Compound(_, sl) => {
+                sl.names(names)
+            },
+            Statement::Skip(_) | Statement::Decl(_) | Statement::Break(_) => {},
         }
     }
 }
@@ -309,6 +362,7 @@ impl Labels {
     pub fn set_labelling_tree<'a>(s: &Statement, after: i64, break_to: i64, labels: &'a mut Labels) {
         match s {
             Statement::Assign(id, _, _)  | Statement::Skip(id) | Statement::Decl(id) => {
+                println!("setting after: {:?} {}", s, after);
                 let mut l = labels.labels.get_mut(id).unwrap();
                 l.after = after;
                 l.break_to = -1;
@@ -376,7 +430,14 @@ impl Labels {
     }
     pub fn set_labelling_tree_list<'a>(s: &StatementList, after: i64, break_to: i64, labels: &'a mut Labels) -> bool {
         match s {
-            StatementList::Empty(_) => false,
+            StatementList::Empty(id) => {
+                // TODO test the following
+                let mut l = labels.labels.get_mut(id).unwrap();
+                l.after = after;
+                l.escape = false;
+                // end TODO
+                false
+            },
             StatementList::StatementList(_, sl, stmt) => {
                 let mut escape;
                 {
@@ -387,6 +448,14 @@ impl Labels {
                     let l_stmt = labels.labels.get_mut(&stmt.id()).unwrap();
                     escape |= l_stmt.escape;
                 }
+                // TODO test the following
+                let mut l = labels.labels.get_mut(&sl.id()).unwrap();
+                l.after = stmt.id();
+                l.escape = escape;
+                if escape {
+                    l.break_to = break_to;
+                }
+                // end TODO
                 escape
             },
         }

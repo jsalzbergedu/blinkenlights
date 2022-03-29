@@ -29,17 +29,30 @@ def new_variableno(con):
 def new_constantno(con):
     return new_no(con, "id", "constant")
 
+def new_assertno(con):
+    return new_no(con, "id", "assertion")
+
 def parse_expr_dispatch(con, pycobj):
     if type(pycobj) == pycparser.c_ast.ID:
         return parse_id(con, pycobj)
     elif type(pycobj) == pycparser.c_ast.Constant:
         return parse_constant(con, pycobj)
-    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '>=':
-        return parse_ge(con, pycobj)
     elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '+':
         return parse_plus(con, pycobj)
     elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '>':
         return parse_gt(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '>=':
+        return parse_ge(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '<=':
+        return parse_le(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '<':
+        return parse_lt(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '==':
+        return parse_eq(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '||':
+        return parse_or(con, pycobj)
+    elif type(pycobj) == pycparser.c_ast.BinaryOp and pycobj.op == '&&':
+        return parse_and(con, pycobj)
     else:
         raise ValueError(type(pycobj).__name__ + " not yet implemented")
 
@@ -99,10 +112,85 @@ def parse_gt(con, pycbinop):
     con.commit()
     return exprno
 
+def parse_le(con, pycbinop):
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :idt)''',
+                {"kind": "le", "idt": exprno})
+    left_child = parse_expr_dispatch(con, pycbinop.left)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 0, "child": left_child})
+    right_child = parse_expr_dispatch(con, pycbinop.right)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 1, "child": right_child})
+    con.commit()
+    return exprno
+
+def parse_lt(con, pycbinop):
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :idt)''',
+                {"kind": "lt", "idt": exprno})
+    left_child = parse_expr_dispatch(con, pycbinop.left)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 0, "child": left_child})
+    right_child = parse_expr_dispatch(con, pycbinop.right)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 1, "child": right_child})
+    con.commit()
+    return exprno
+
+def parse_eq(con, pycbinop):
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :idt)''',
+                {"kind": "eq", "idt": exprno})
+    left_child = parse_expr_dispatch(con, pycbinop.left)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 0, "child": left_child})
+    right_child = parse_expr_dispatch(con, pycbinop.right)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 1, "child": right_child})
+    con.commit()
+    return exprno
+
 def parse_plus(con, pycbinop):
     exprno = new_exprno(con)
     con.execute('''insert into expr values (:kind, :idt)''',
                 {"kind": "+", "idt": exprno})
+    left_child = parse_expr_dispatch(con, pycbinop.left)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 0, "child": left_child})
+    right_child = parse_expr_dispatch(con, pycbinop.right)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 1, "child": right_child})
+    con.commit()
+    return exprno
+
+def parse_or(con, pycbinop):
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :idt)''',
+                {"kind": "||", "idt": exprno})
+    left_child = parse_expr_dispatch(con, pycbinop.left)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 0, "child": left_child})
+    right_child = parse_expr_dispatch(con, pycbinop.right)
+    childid = new_expr_childno(con)
+    con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
+                {"idt": childid, "expr": exprno, "idx": 1, "child": right_child})
+    con.commit()
+    return exprno
+
+def parse_and(con, pycbinop):
+    exprno = new_exprno(con)
+    con.execute('''insert into expr values (:kind, :idt)''',
+                {"kind": "&&", "idt": exprno})
     left_child = parse_expr_dispatch(con, pycbinop.left)
     childid = new_expr_childno(con)
     con.execute('''insert into expr_children values (:idt, :expr, :idx, :child)''',
@@ -127,6 +215,8 @@ def parse_dispatch(pycobj, con):
         return parse_while(pycobj, con)
     elif type(pycobj) == pycparser.c_ast.Assignment:
         return parse_assign(pycobj, con)
+    elif type(pycobj) == pycparser.c_ast.FuncCall and pycobj.name and pycobj.name.name == "assert":
+        return parse_assert(pycobj, con)
     elif type(pycobj) == pycparser.c_ast.Decl:
         return parse_decl(pycobj, con)
     else:
@@ -241,6 +331,22 @@ def parse_while(pycwhile, con):
     con.commit()
     return idno
 
+def parse_assert(pycassert, con):
+    # Kludge: treat the assert as an empty statement list.
+    # This means that assert will define the invariant at after[sl]
+    # and moreover that the assertion table will collect the appropriate exprs.
+    idno = parse_pycobj(pycassert, "compound", con)
+    child = parse_compound_rec(idno, (), con)
+    childid = new_childno(con)
+    con.execute('''insert into children values (:idt, :node, :idx, :child)''',
+                {"idt": childid, "node": idno, "idx": 0, "child": child})
+    con.commit()
+    child = parse_expr_dispatch(con, pycassert.args.exprs[0])
+    assertion = new_assertno(con)
+    con.execute('''insert into assertion values (:idt, :node, :expr)''',
+                {"idt": assertion, "node": idno, "expr": child})
+    return idno
+
 def parse_ifthen(pycifthen, con):
     idno = parse_pycobj(pycifthen, "ifthen", con)
     child = parse_expr_dispatch(con, pycifthen.cond)
@@ -305,8 +411,8 @@ def dispatch_command(command, con):
     else:
         raise ValueError("Command ", command, "not handled")
 
-def setup_con():
-    con = sqlite3.connect('analysis.db')
+def setup_con(db_name):
+    con = sqlite3.connect(db_name)
     con.execute('''CREATE TABLE IF NOT EXISTS node (kind text, id integer, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS fileinfo (id integer, filename text, column integer, line integer, node integer, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS children (id integer, node integer, idx integer, child integer, PRIMARY KEY (id))''')
@@ -314,11 +420,18 @@ def setup_con():
     con.execute('''CREATE TABLE IF NOT EXISTS expr_children (id integer, expr integer, idx integer, child integer, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS variable (id integer, name text, PRIMARY KEY (id))''')
     con.execute('''CREATE TABLE IF NOT EXISTS constant (id integer, constant integer, PRIMARY KEY (id))''')
+    con.execute('''CREATE TABLE IF NOT EXISTS assertion (id integer, node integer, expr integer, PRIMARY KEY (id))''')
     con.commit()
     return con
 
 if __name__ == '__main__':
-    con = setup_con()
+    db_name = None
+    if len(sys.argv) > 1:
+        print("writing to database, ", sys.argv[1])
+        db_name = sys.argv[1]
+    else:
+        db_name = "analysis.db"
+    con = setup_con(db_name)
     while True:
         line = sys.stdin.read()
         if not line:
