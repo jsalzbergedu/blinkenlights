@@ -143,7 +143,7 @@ pub enum Predicate {
     BooleanName(String),
     IntegerName(String),
     Array(BTreeMap<String, i64>),
-    Store(Box<Predicate>, String, i64),
+    Store(Box<Predicate>, String, Box<Predicate>),
     Load(Box<Predicate>, String),
     BoolToInt(Box<Predicate>),
     IntegerLiteral(i64),
@@ -165,6 +165,33 @@ pub enum Predicate {
 impl Default for Predicate {
     fn default() -> Self {
         Predicate::BooleanLiteral(true)
+    }
+}
+
+impl Predicate {
+    pub fn is_bool(&self) -> bool {
+        match self {
+            Predicate::BooleanName(_) => true,
+            Predicate::IntegerName(_) => false,
+            Predicate::Array(_) => false,
+            Predicate::Store(_, _, _) => false,
+            Predicate::Load(_, _) => todo!(),
+            Predicate::BoolToInt(_) => todo!(),
+            Predicate::IntegerLiteral(_) => todo!(),
+            Predicate::BooleanLiteral(_) => todo!(),
+            Predicate::Addition(_, _) => todo!(),
+            Predicate::Subtraction(_, _) => todo!(),
+            Predicate::Equal(_, _) => todo!(),
+            Predicate::NotEqual(_, _) => todo!(),
+            Predicate::LessThan(_, _) => todo!(),
+            Predicate::LessThanEqual(_, _) => todo!(),
+            Predicate::GreaterThan(_, _) => todo!(),
+            Predicate::GreaterThanEqual(_, _) => todo!(),
+            Predicate::And(_, _) => todo!(),
+            Predicate::Not(_) => todo!(),
+            Predicate::Implies(_, _) => todo!(),
+            Predicate::Or(_, _) => todo!(),
+        }
     }
 }
 
@@ -236,9 +263,10 @@ impl PredicateBuilder {
         self
     }
 
-    fn store(mut self, s: String, i: i64) -> Self {
+    fn store(mut self, s: String) -> Self {
+        let i = self.predicate.pop().expect("no integer on predicate builder stack");
         let pred = self.predicate.pop().expect("no array on predicate builder stack");
-        self.predicate.push(Predicate::Store(Box::new(pred), s, i));
+        self.predicate.push(Predicate::Store(Box::new(pred), s, Box::new(i)));
         self
     }
 
@@ -346,8 +374,8 @@ impl PredicateExpressionBuilder {
         self
     }
 
-    fn store(mut self, s: String, i: i64) -> Self {
-        self.predicate = self.predicate.store(s, i);
+    fn store(mut self, s: String) -> Self {
+        self.predicate = self.predicate.store(s);
         self
     }
 
@@ -407,6 +435,27 @@ impl PredicateExpressionBuilder {
 }
 
 impl Predicate {
+    pub fn model<'a>(&'a self) -> String {
+        let mut cfg = Config::new();
+        cfg.set_timeout_msec(1000);
+        let context = Context::new(&cfg);
+        let sat = self.into_sat(&context);
+        match sat {
+            Z3Repr::Bool(b) => {
+                let solver = Solver::new(&context);
+                solver.assert(&b);
+                match solver.check() {
+                    z3::SatResult::Unsat => {"Unsat".to_string()},
+                    z3::SatResult::Unknown => {"Unknown".to_string()},
+                    z3::SatResult::Sat => {
+                        format!("{:?}", solver.get_model().unwrap())
+                    },
+                }
+            },
+            _ => {"Invalid predicate".to_string()}
+        }
+    }
+
     pub fn into_sat<'a>(&'a self, ctx: &'a Context) -> Z3Repr<'a> {
         match &self {
             Predicate::Array(b) => {
@@ -422,13 +471,20 @@ impl Predicate {
                 match p.into_sat(ctx) {
                     Z3Repr::Int(_) | Z3Repr::Bool(_) => panic!("Store must take an array"),
                     Z3Repr::Array(a) => {
-                        Z3Repr::Array(a.store(&z3::ast::String::from_str(ctx, s).unwrap(), &z3::ast::Int::from_i64(ctx, *i)))
+                        match i.into_sat(ctx) {
+                            Z3Repr::Int(i) => {
+                                Z3Repr::Array(a.store(&z3::ast::String::from_str(ctx, s).unwrap(), &i))
+                            }
+                            _ => {
+                                panic!("Store must store an integer value");
+                            }
+                        }
                     },
                 }
             }
             Predicate::Load(p, s) => {
                 match p.into_sat(ctx) {
-                    Z3Repr::Int(_) | Z3Repr::Bool(_) => panic!("Store must take an array"),
+                    Z3Repr::Int(_) | Z3Repr::Bool(_) => panic!("Load must take an array"),
                     Z3Repr::Array(a) => {
                         Z3Repr::Int(a.select(&z3::ast::String::from_str(ctx, s).unwrap()).as_int().unwrap())
                     },
@@ -910,7 +966,7 @@ impl AbstractDomain<Predicate> for PredicateSemantics {
     fn assign(&mut self, x: &Expr, expr: &Expr, element: Predicate) -> Predicate {
         match x {
             Expr::Variable(_, s) => {
-                PredicateBuilder::new().name(s.to_owned()).pred(process_expression(expr, &element))._eq().finish()
+                PredicateBuilder::new().pred(element.clone()).pred(process_expression(expr, &element)).store(s.to_owned()).finish()
             },
             _ => panic!("Non variable lvalues are not yet supported")
         }
@@ -939,7 +995,7 @@ impl AbstractDomain<Predicate> for PredicateSemantics {
         match statement {
             Statement::Assign(_, x, expr) => {
                 let assmt = self.assign(x, expr, process_expression(&at_invariant, &element));
-                at_property_b.pred(assmt.clone()).pred(process_expression(&after_invariant, &assmt)).literal(0).ne().imp();
+                at_property_b = at_property_b.pred(assmt.clone()).pred(process_expression(&after_invariant, &assmt)).literal(0).ne().imp();
                 map.insert(at, at_property_b.finish().into());
             },
             Statement::Skip(_) | Statement::Decl(_) => {
@@ -961,15 +1017,15 @@ impl AbstractDomain<Predicate> for PredicateSemantics {
                 map.insert(at, PropertyCacheElement { at_property, ..Default::default() });
             },
             Statement::IfThenElse(_, b, st, sf) => {
-                let st_interpretation = self.interpret(labels, st, at_invariant.clone());
-                let sf_interpretation = self.interpret(labels, st, at_invariant.clone());
-                let at_property = at_property_b.env(st_interpretation[&st.id()].at_property.clone()).and().env(sf_interpretation[&sf.id()].at_property.clone()).and().finish();
+                let st_interpretation = self.interpret(labels, st, process_expression(&at_invariant, &element));
+                let sf_interpretation = self.interpret(labels, sf, process_expression(&at_invariant, &element));
+                let at_property = at_property_b.pred(st_interpretation[&st.id()].at_property.clone()).and().pred(sf_interpretation[&sf.id()].at_property.clone()).and().finish();
                 map.extend(st_interpretation);
                 map.extend(sf_interpretation);
                 map.insert(at, PropertyCacheElement { at_property, ..Default::default() });
             },
             Statement::Break(_) => {
-                let at_property = at_property_b.env(at_invariant).env(break_to_invariant).imp().and().finish();
+                let at_property = at_property_b.pred(process_expression(&break_to_invariant, &element)).literal(0).ne().imp().finish();
                 map.insert(at, PropertyCacheElement { at_property, ..Default::default() });
             },
             Statement::Compound(_, sl) => {
@@ -981,25 +1037,25 @@ impl AbstractDomain<Predicate> for PredicateSemantics {
         map
     }
 
-    fn interpret_sl(&mut self, labels: &Labels, sl: &StatementList, element: PredicateEnvironment) -> HashMap<i64, PropertyCacheElement<PredicateEnvironment>> {
+    fn interpret_sl(&mut self, labels: &Labels, sl: &StatementList, element: Predicate) -> HashMap<i64, PropertyCacheElement<Predicate>> {
         let at = sl.id();
         let after = labels.labels[&sl.id()].after;
         let at_invariant = self.invariant(at).clone();
         let after_invariant = self.invariant(after).clone();
 
-        let mut at_property_b = PredicateEnvironmentBuilder::new();
+        let at_property_b = PredicateBuilder::new();
         // at_property_b = at_property_b.env(element.clone()).env(at_invariant.clone()).imp();
         let mut map = HashMap::new();
         match sl {
             StatementList::Empty(_) => {
-                let at_property = at_property_b.env(at_invariant).env(after_invariant).imp().finish();
+                let at_property = at_property_b.pred(process_expression(&at_invariant, &element)).literal(0).ne().pred(process_expression(&after_invariant, &element)).literal(0).ne().imp().finish();
                 map.insert(at, PropertyCacheElement { at_property, ..Default::default() });
             },
             StatementList::StatementList(_, sl, s) => {
                 let sl_interpretation = self.interpret_sl(labels, sl, element.clone());
                 // Propegate invariant
-                let s_interpretation = self.interpret(labels, s, self.invariant(labels.labels[&sl.id()].after).clone());
-                let at_property = at_property_b.env(sl_interpretation[&sl.id()].at_property.clone()).env(s_interpretation[&s.id()].at_property.clone()).and().finish();
+                let s_interpretation = self.interpret(labels, s, process_expression(&self.invariant(labels.labels[&sl.id()].after).clone(), &element));
+                let at_property = at_property_b.pred(sl_interpretation[&sl.id()].at_property.clone()).pred(s_interpretation[&s.id()].at_property.clone()).and().finish();
                 map.insert(at, PropertyCacheElement { at_property, ..Default::default() });
                 map.extend(s_interpretation);
                 map.extend(sl_interpretation);
@@ -1008,7 +1064,7 @@ impl AbstractDomain<Predicate> for PredicateSemantics {
         map
     }
 
-    fn interpret_program(&mut self, program: &Program, labels: &Labels) -> HashMap<i64, PropertyCacheElement<PredicateEnvironment>> {
+    fn interpret_program(&mut self, program: &Program, labels: &Labels) -> HashMap<i64, PropertyCacheElement<Predicate>> {
         match program {
             Program::Program(_, statement) => {
                 // let mut names = Vec::new();
@@ -1018,7 +1074,7 @@ impl AbstractDomain<Predicate> for PredicateSemantics {
                 //     b = b.name(name).literal(0)._eq().and();
                 // }
                 // let env = b.finish().into();
-                self.interpret(labels, &statement, PredicateEnvironment::bottom())
+                self.interpret(labels, &statement, Predicate::bottom())
             },
         }
     }

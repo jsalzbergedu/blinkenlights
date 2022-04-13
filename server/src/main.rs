@@ -119,7 +119,7 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
                         Ok(it) => it,
                         Err(err) => return Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
                     };
-                    let output: HashMap<i64, PropertyCacheElement<PredicateEnvironment>> = predicate.interpret_program(&p, &labels);
+                    let output: HashMap<i64, PropertyCacheElement<Predicate>> = predicate.interpret_program(&p, &labels);
                     let config = Config::new();
                     let context = Context::new(&config);
                     let solver = Solver::new(&context);
@@ -132,22 +132,22 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
                                                      let mut result = "No Model -- Unsatisfied";
                                                      let result_string;
                                                      if output.contains_key(&id) {
-                                                         let inv = &output[&id].at_property.invariant;
+                                                         let inv = &output[&id].at_property;
                                                          match inv.into_sat(&context) {
-                                                             Z3Repr::Int(_) => panic!("Invariants may not be int"),
+                                                             Z3Repr::Int(_) => panic!("Property may not be int"),
                                                              Z3Repr::Bool(b) => {
                                                                  solver.assert(&b);
                                                                  match solver.check() {
                                                                      z3::SatResult::Unsat => {println!("UNSAT!: {:?}", solver)},
                                                                      z3::SatResult::Unknown => {result = "No Model -- Unknown"},
                                                                      z3::SatResult::Sat => {
-                                                                         let mut map = HashMap::new();
-                                                                         let _ = &output[&id].at_property.model(&mut map);
-                                                                         result_string = format!("Satisfied -- {:?}", map);
+                                                                         let s = &output[&id].at_property.model();
+                                                                         result_string = format!("Satisfied -- {}", s);
                                                                          result = &result_string;
                                                                      },
                                                                  };
                                                              },
+                                                             Z3Repr::Array(a) => panic!("Property may not be array"),
                                                          }
                                                      }
                                                      println!("{}", result);
