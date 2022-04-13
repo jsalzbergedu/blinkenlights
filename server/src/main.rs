@@ -103,12 +103,12 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
             Labels::set_collections_program(&p, &mut labels);
             match analyze_request.analysis.borrow() {
                 "sign" => {
-                    let sign = SignSemantics();
+                    let mut sign = SignSemantics();
                     let output: HashMap<i64, PropertyCacheElement<SignProperty>> = sign.interpret_program(&p, &labels);
                     print_property_cache(output, db, &mut map);
                 },
                 "trace" => {
-                    let asstnl = AssertionalSemantics();
+                    let mut asstnl = AssertionalSemantics();
                     let output: HashMap<i64, PropertyCacheElement<SetOfEnvironments>> = asstnl.interpret_program(&p, &labels);
                     print_property_cache(output, db, &mut map);
                 },
