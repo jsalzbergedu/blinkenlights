@@ -9,7 +9,7 @@ class TestBlinkenlights(object):
 
     @classmethod
     def setup_class(cls):
-        cls.con = blinkenlights.setup_con()
+        cls.con = blinkenlights.setup_con("analysis.db")
         return
 
     def test_basic_parse(self):
