@@ -6,9 +6,6 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::ops::Add;
 use std::ops::Sub;
-use z3::Sort;
-use z3::ast::Ast;
-use z3::{Config, Context, Solver};
 
 use crate::ast::Statement;
 use crate::ast::Program;
