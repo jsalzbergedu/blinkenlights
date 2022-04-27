@@ -1,9 +1,8 @@
 use std::{collections::{HashSet, BTreeMap}, cmp::Ordering, ops::{Sub, Add}};
-use cached::proc_macro::cached;
 
-use crate::{lattice::AbstractProperty, ast::Expr};
+use crate::{lattice::{AbstractProperty, Lattice}, ast::Expr};
 
-use super::{AbstractDomain, ExpressionReachability, CartesianProperty, CartesianValue};
+use super::AbstractDomain;
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum SignPropertyElement {
@@ -221,107 +220,37 @@ impl AbstractProperty for SignProperty {
     }
 }
 
-// Empirical design of the inverse operation
-
-fn expand(s: SignPropertyElement) -> HashSet<i64> {
-    match s {
-        SignPropertyElement::Bottom => HashSet::new(),
-        SignPropertyElement::StrictlyLessThanZero => HashSet::from([-1, -2, -3, -4, -5, -6, -7, -8, -9, -10]),
-        SignPropertyElement::Zero => HashSet::from([0]),
-        SignPropertyElement::StrictlyGreaterThanZero => HashSet::from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
-        SignPropertyElement::LessThanZero => HashSet::from([0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10]),
-        SignPropertyElement::NotZero => HashSet::from([-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
-        SignPropertyElement::GreaterThanZero => HashSet::from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
-        SignPropertyElement::Top => HashSet::from([-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
-    }
-}
-
-fn inv_op<F: Fn(i64, i64) -> i64>(target: SignPropertyElement, lhs: SignPropertyElement, rhs: SignPropertyElement, f: F) -> (SignPropertyElement, SignPropertyElement) {
-    let lhs_possibilities = expand(lhs);
-    let rhs_possibilities = expand(rhs);
-    let target = expand(target);
-    let mut lhs_restricted = HashSet::new();
-    let mut rhs_restricted = HashSet::new();
-    for x in &lhs_possibilities {
-        for y in &rhs_possibilities {
-            if target.contains(&f(*x, *y)) {
-                lhs_restricted.insert(x);
-                rhs_restricted.insert(y);
-            }
-        }
-    }
-    (lhs_restricted.into_iter().fold(SignPropertyElement::Bottom, |x, y| x.lub(&SignPropertyElement::from(*y))), rhs_restricted.into_iter().fold(SignPropertyElement::Bottom, |x, y| x.lub(&SignPropertyElement::from(*y))))
-}
-
-impl ExpressionReachability for SignPropertyElement {
-    fn inv_eq(target: Self, lhs: Self, rhs: Self) -> (Self, Self) {
-        // Overapproximate target = 1 with target = StrictlyGreaterthanZero
-        // This is because in the concrete, in C, booleans map to either 0 or 1
-        if target >= Self::StrictlyGreaterThanZero {
-            (GLB_TABLE[lhs as usize][rhs as usize], GLB_TABLE[lhs as usize][rhs as usize])
-        } else if target == Self::Zero {
-            Self::inv_neq(Self::Zero, lhs, rhs)
-        } else {
-            (Self::Bottom, Self::Bottom)
+impl AbstractDomain<SignProperty> for SignSemantics {
+    fn assign(&mut self, x: &Expr, expr: &Expr, environments: SignProperty) -> SignProperty {
+        match x {
+            Expr::Variable(_, s) => {
+                HashSet::<BTreeMap<String, SignPropertyElement>>::from(&environments).iter().map(|elt| {
+                    let mut out = elt.clone();
+                    out.insert(s.to_owned(), expr.eval(&|(_, s)| *elt.get(s).unwrap_or(&SignPropertyElement::Zero)));
+                    out
+                }).fold(SignProperty::bottom(), |acc, map| {
+                    // Legal as alpha preserves lub
+                    acc.lub(&SignProperty(map))
+                })
+            },
+            _ => panic!("Non variable lvalues not yet handled"),
         }
     }
 
-    fn inv_neq(target: Self, lhs: Self, rhs: Self) -> (Self, Self) {
-        if target >= Self::StrictlyGreaterThanZero {
-            // Here you're restricting the lhs and the rhs to the possible values
-            // where lhs != rhs.
-            // The only case where you KNOW there are no values where lhs != rhs
-            // is when both are zero.
-            // Otherwise since they are all sets containing values including zero and other elements,
-            // the zero could != the other elements, or the other elements could != each other.
-            match (lhs, rhs) {
-                (Self::Bottom, _) => (Self::Bottom, rhs),
-                (_, Self::Bottom) => (lhs, Self::Bottom),
-                (Self::Zero, Self::Zero) => (Self::Bottom, Self::Bottom),
-                (_, _) => (lhs, rhs)
-            }
-        } else if target == Self::Zero {
-            Self::inv_eq(Self::StrictlyGreaterThanZero, lhs, rhs)
-        } else {
-            (Self::Bottom, Self::Bottom)
-        }
+    fn test(&mut self, expr: &Expr, environments: SignProperty) -> SignProperty {
+        HashSet::<BTreeMap<String, SignPropertyElement>>::from(&environments).iter().filter(|elt| {
+            expr.eval(&|(_, s)| *elt.get(s).unwrap_or(&SignPropertyElement::Zero)) != SignPropertyElement::Zero
+        }).fold(SignProperty::bottom(), |acc, map| {
+            acc.lub(&SignProperty(map.clone()))
+        })
     }
 
-    fn inv_add(target: Self, lhs: Self, rhs: Self) -> (Self, Self) {
-        inv_op(target, lhs, rhs, |x, y| x + y)
-    }
-
-    fn inv_sub(target: Self, lhs: Self, rhs: Self) -> (Self, Self) {
-        inv_op(target, lhs, rhs, |x, y| x - y)
-    }
-
-    fn inv_lt(target: Self, lhs: Self, rhs: Self) -> (Self, Self) {
-        inv_op(target, lhs, rhs, |x, y| if x < y {1} else {0})
-    }
-
-    fn inv_gt(target: Self, lhs: Self, rhs: Self) -> (Self, Self) {
-        inv_op(target, lhs, rhs, |x, y| if x > y {1} else {0})
-    }
-
-    fn inv_le(target: Self, lhs: Self, rhs: Self) -> (Self, Self) {
-        inv_op(target, lhs, rhs, |x, y| if x <= y {1} else {0})
-    }
-
-    fn inv_ge(target: Self, lhs: Self, rhs: Self) -> (Self, Self) {
-        inv_op(target, lhs, rhs, |x, y| if x >= y {1} else {0})
-    }
-
-    fn inv_nand(target: Self, lhs: Self, rhs: Self) -> (Self, Self) {
-        inv_op(target, lhs, rhs, |x, y| if !(x != 0 && y != 0) {1} else {0})
+    fn not_test(&mut self, expr: &Expr, environments: SignProperty) -> SignProperty {
+        HashSet::<BTreeMap<String, SignPropertyElement>>::from(&environments).iter().filter(|elt| {
+            SignPropertyElement::Zero <= expr.eval(&|(_, s)| *elt.get(s).unwrap_or(&SignPropertyElement::Zero))
+        }).fold(SignProperty::bottom(), |acc, map| {
+            acc.lub(&SignProperty(map.clone()))
+        })
     }
 }
 
-impl CartesianValue for SignPropertyElement {
-    fn glb(self, other: Self) -> Self {
-        GLB_TABLE[self as usize][other as usize]
-    }
-
-    fn nzr() -> Self {
-        Self::NotZero
-    }
-}

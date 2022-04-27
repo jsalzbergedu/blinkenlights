@@ -1,7 +1,7 @@
-use std::{borrow::Borrow, collections::{HashMap, HashSet}, ops::{Add, Sub}};
+use std::{collections::{HashMap, HashSet}, ops::{Add, Sub}};
 use std::convert::Into;
-
-use crate::{db, lattice::Lattice};
+use std::borrow::Borrow;
+use crate::db;
 
 type AstId = i64;
 

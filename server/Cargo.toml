@@ -13,6 +13,7 @@ mktemp = "0.4.1"
 serde_rusqlite = "0.29.0"
 rusqlite = "0.26.0"
 lazy_static = "1.4.0"
+cached = "0.34.0"
 
 [[bin]]
 name = "blinkenlights-server"

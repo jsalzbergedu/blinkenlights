@@ -103,8 +103,8 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
             Labels::set_collections_program(&p, &mut labels);
             match analyze_request.analysis.borrow() {
                 "sign" => {
-                    let mut sign = SignSemantics();
-                    let output: HashMap<i64, PropertyCacheElement<SignProperty>> = sign.interpret_program(&p, &labels);
+                    let mut cart = CartesianSemantics();
+                    let output: HashMap<i64, PropertyCacheElement<CartesianProperty<SignPropertyElement>>> = cart.interpret_program(&p, &labels);
                     print_property_cache(output, db, &mut map);
                 },
                 "trace" => {
@@ -117,6 +117,7 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
         },
         Err(str) => {println!("{}", str); return Err(std::io::Error::new(std::io::ErrorKind::Other, str));},
     };
+    // TODO NEXT: Debug why you can't set positive at x = x + 1;
     Ok(HttpResponse::Ok().json(map))
 }
 

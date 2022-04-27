@@ -1,19 +1,15 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::ops::Add;
-use std::ops::Sub;
 
 use crate::ast::Statement;
 use crate::ast::Program;
 use crate::ast::Expr;
 use crate::ast::StatementList;
 use crate::ast::Labels;
-use crate::db::DB;
 use crate::lattice::AbstractProperty;
+
+// TODO fix the terminology. EG semantics, domain, property get mixed up here
 
 /// The maximum number of iterations allowed for computing fixedpoints (i.e., while loops).
 const MAX_ITERS: i64 = 1024 * 1024;
@@ -49,6 +45,7 @@ pub trait AbstractDomain<T> where T: AbstractProperty + Sized + Clone + Eq + Deb
         match statement {
             Statement::Assign(id, x, y) => {
                 let mut map = HashMap::new();
+                println!("Executing assign: at_property: {:?}, after_property: {:?}, break_to_property: {:?} ", element.clone(), self.assign(x, y, element.clone()), T::bottom());
                 map.insert(*id, PropertyCacheElement { at_property: element.clone(), after_property: self.assign(x, y, element.clone()), break_to_property: T::bottom()});
                 map
             },
@@ -80,6 +77,9 @@ pub trait AbstractDomain<T> where T: AbstractProperty + Sized + Clone + Eq + Deb
                 let mut map = HashMap::new();
                 while iter < MAX_ITERS {
                     let old_iterate = iterate.clone();
+                    println!("Testing in while with: {:?}", iterate.at_property.clone().lub(&element.clone()));
+                    println!("lhs lub: {:?}", element.clone());
+                    println!("rhs lub: {:?}", iterate.at_property.clone());
                     let test_env = self.test(expr, iterate.at_property.clone().lub(&element.clone()));
                     let at_interpretation = self.interpret(labels, st, test_env);
                     map.extend(at_interpretation.clone());

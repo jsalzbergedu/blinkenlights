@@ -6,3 +6,6 @@ pub use assertional_domain::*;
 
 mod sign_domain;
 pub use sign_domain::*;
+
+mod cartesian_domain;
+pub use cartesian_domain::*;
