@@ -1,9 +1,8 @@
 use std::{collections::{HashSet, BTreeMap}, cmp::Ordering, ops::{Sub, Add}};
-use cached::proc_macro::cached;
 
-use crate::{lattice::AbstractProperty, ast::Expr};
+use crate::lattice::AbstractProperty;
 
-use super::{AbstractDomain, ExpressionReachability, CartesianProperty, CartesianValue};
+use super::{ExpressionReachability, CartesianValue};
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum SignPropertyElement {

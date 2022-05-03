@@ -117,7 +117,6 @@ async fn analyze(body: String) -> Result<impl Responder, std::io::Error> {
         },
         Err(str) => {println!("{}", str); return Err(std::io::Error::new(std::io::ErrorKind::Other, str));},
     };
-    // TODO NEXT: Debug why you can't set positive at x = x + 1;
     Ok(HttpResponse::Ok().json(map))
 }
 

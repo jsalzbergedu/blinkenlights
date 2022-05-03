@@ -12,11 +12,3 @@ pub trait Lattice: AbstractProperty {
     // leq, meet required for the mathematical definition of a lattice
     // but not used in the library
 }
-
-pub trait CartesianAbstractProperty: Lattice {
-    fn unit() -> Self;
-    fn smashed_minus() -> Self;
-    fn smashed_inverse_minus() -> Self;
-    fn smashed_lt() -> Self;
-    fn smashed_dual_lt() -> Self;
-}
